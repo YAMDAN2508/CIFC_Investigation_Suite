@@ -32,7 +32,7 @@ def apply_custom_theme():
                 font-weight: 600 !important;
             }
             
-            /* تنسيق التبريبات (Tabs) */
+            /* تنسيق التبويبات (Tabs) */
             .stTabs [data-baseweb="tab-list"] {
                 gap: 10px;
                 background-color: #161b22;
@@ -256,7 +256,7 @@ def analyze_url_or_ip(item, lang_choice):
     return ("SAFE ✅" if lang_choice == "English" else "آمن ✅"), score, "-"
 
 # ==============================================================================
-# 3. BILINGUAL LEXICON
+# 3. BILINGUAL LEXICON (WITH DYNAMIC SEARCH PLACEHOLDERS)
 # ==============================================================================
 LEXICON = {
     "English": {
@@ -282,6 +282,7 @@ LEXICON = {
         "tab_vault": "📁 Case Vault & Archive Manager",
         "pdf_btn": "Generate Official PDF Forensics Report",
         "search_lbl": "Enter keyword or indicator to search in full conversation:",
+        "search_placeholder": "e.g., blackmail, transfer, hack, حساب, ابتزاز",
         "vault_add_hdr": "Add New Forensic Indicator Manually",
         "vault_tbl_hdr": "Live Central Database Records Archive",
         "col_iban": "IBAN Account Number",
@@ -318,6 +319,7 @@ LEXICON = {
         "tab_vault": "📁 إدارة قاعدة البيانات والأرشيف المركزي",
         "pdf_btn": "توليد التقرير الجنائي الرسمي (PDF)",
         "search_lbl": "اكتب الكلمة أو الرقم للبحث الفوري وإبراز السياق الجنائي:",
+        "search_placeholder": "مثال: ابتزاز، تحويل، اختراق، blackmail, transfer",
         "vault_add_hdr": "إضافة مؤشر اشتباه جديد يدوياً إلى النظام",
         "vault_tbl_hdr": "أرشيف السجلات المركزي وقضايا الربط السابقة",
         "col_iban": "رقم الحساب البنكي (IBAN)",
@@ -555,7 +557,8 @@ with main_tabs[0]:
 
         with tab5:
             st.subheader(tx["tab_search"])
-            search_query = st.text_input(tx["search_lbl"], placeholder="e.g., ابتزاز, تحويل")
+            # تم التحديث هنا لاستخدام الـ Placeholder الذكي والديناميكي المتغير حسب اللغة
+            search_query = st.text_input(tx["search_lbl"], placeholder=tx["search_placeholder"])
             if search_query:
                 search_results = []
                 for idx, line in enumerate(lines):
@@ -637,7 +640,7 @@ with main_tabs[1]:
                 st.success("✅ " + ("Case File retrieved successfully! Switch to 'Evidence Analyzer' tab to view analyses." if lang=="English" else "تم استدعاء ملف القضية بنجاح! انتقلي إلى تبويب 'شاشة فحص وتحليل الأدلة' لمشاهدة التحليلات فوراً."))
                 st.rerun()
             else:
-                st.error("❌ " + ("Case number not found in local database." if lang=="English" else "رقم القضية غير مسجل في أرشيف قاعدة البيانات."))
+                st.error("❌ " + ("Case number not found in local database." if lang=="English" else "رقم القضية غير مسجل in أرشيف قاعدة البيانات."))
     st.markdown("</div>", unsafe_allow_html=True)
                 
     st.markdown("<br>", unsafe_allow_html=True)
