@@ -7,7 +7,6 @@ import hashlib
 from datetime import datetime
 from fpdf import FPDF
 import io
-# استيراد محرك الترجمة المستقر
 from deep_translator import GoogleTranslator
 
 # ==============================================================================
@@ -82,16 +81,11 @@ def apply_custom_theme():
                 background-color: #090d13 !important;
                 border-right: 1px solid #30363d;
             }
-            .stDataFrame, .stTable {
-                border: 1px solid #30363d;
-                border-radius: 8px;
-                overflow: hidden;
-            }
         </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 1. DATABASE SETUP & CASE VAULT MANAGEMENT
+# DATABASE SETUP
 # ==============================================================================
 def init_db():
     conn = sqlite3.connect('cfis_local_vault.db')
@@ -120,7 +114,6 @@ def init_db():
         ('BH12BBAN00000000123456', 'IBAN', '2026/CID/894', 'Lt. Jasim', '2026-04-12'),
         ('+97333123456', 'Phone', '2026/CID/412', 'Sgt. Ali', '2026-05-19'),
         ('scammer99@gmail.com', 'Email', '2026/CID/894', 'Lt. Jasim', '2026-04-12'),
-        ('1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa', 'Crypto', '2026/CID/102', 'Capt. Reem', '2026-06-01'),
         ('192.168.1.105', 'IP Address', '2026/CID/711', 'Lt. Dana', '2026-07-10')
     ]
     try:
@@ -170,15 +163,12 @@ def get_all_indicators():
     conn.close()
     return df
 
-def calculate_sha256(bytes_data):
-    return hashlib.sha256(bytes_data).hexdigest()
-
 # ==============================================================================
-# 2. ADVANCED DATA ANALYTICS & THREAT ENGINES
+# ENGINES & ANALYTICS
 # ==============================================================================
 def analyze_chat_threat_score(text, lang_choice):
-    high_risk_words = ['تهديد', 'ابتزاز', 'فلوس', 'حساب', 'تحويل', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'money', 'blackmail', 'hack', 'transfer', 'wire', 'scam']
-    med_risk_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp']
+    high_risk_words = ['تهديد', 'ابتزاز', 'فلوس', 'حساب', 'تحويل', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'money', 'blackmail', 'hack', 'transfer', 'wire', 'scam', '凍結', '不正']
+    med_risk_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp', 'リンク']
     
     high_hits = sum(1 for w in high_risk_words if w in text.lower())
     med_hits = sum(1 for w in med_risk_words if w in text.lower())
@@ -187,15 +177,15 @@ def analyze_chat_threat_score(text, lang_choice):
     score = min(score, 100)
     
     if score >= 60:
-        return score, "CRITICAL RISK 🚨" if lang_choice == "English" else "مستوى خطر حرج (شبهة ابتزاز/احتيال) 🚨"
+        return score, "CRITICAL RISK 🚨" if lang_choice == "English" else "مستوى خطر حرج 🚨"
     elif score >= 25:
         return score, "MEDIUM RISK ⚠️" if lang_choice == "English" else "مستوى خطر متوسط ⚠️"
     return score, "LOW RISK ✅" if lang_choice == "English" else "مستوى خطر منخفض ✅"
 
 def analyze_sentiment_and_tone(text):
-    threat_words = ['تهديد', 'ابتزاز', 'فضيحة', 'بفضحك', 'انشر', 'صورك', 'blackmail', 'expose', 'threat']
-    fear_words = ['خايف', 'ارجوك', 'لا تنشر', 'ستر', 'تكفى', 'please', 'dont', 'afraid', 'stop']
-    financial_words = ['تحويل', 'فلوس', 'دينار', 'حساب', 'كاش', 'money', 'cash', 'pay', 'transfer']
+    threat_words = ['تهديد', 'ابتزاز', 'فضيحة', 'بفضحك', 'انشر', 'صورك', 'blackmail', 'expose', 'threat', '不正']
+    fear_words = ['خايف', 'ارجوك', 'لا تنشر', 'ستر', 'تكفى', 'please', 'dont', 'afraid', 'stop', '不安']
+    financial_words = ['تحويل', 'فلوس', 'دينار', 'حساب', 'كاش', 'money', 'cash', 'pay', 'transfer', '振り込んで', 'デポジット']
     
     t_count = sum(1 for w in threat_words if w in text.lower())
     f_count = sum(1 for w in fear_words if w in text.lower())
@@ -209,30 +199,27 @@ def analyze_sentiment_and_tone(text):
     }
 
 def extract_financial_amounts(text):
-    amounts = re.findall(r'\b(\d+(?:\.\d+)?)\s*(?:دينار|بحريني|BD|BHD|dollar|\$|euro)\b', text.lower())
+    amounts = re.findall(r'\b(\d+(?:\.\d+)?)\s*(?:دينار|بحريني|BD|BHD|dollar|\$|euro|日元|yen)\b', text.lower())
     total_extracted = sum(float(amt) for amt in amounts)
     return amounts, total_extracted
 
 def analyze_url_or_ip(item, lang_choice):
     is_ip = re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', item)
     if is_ip:
-        return ("SUSPICIOUS IP 🌐" if lang_choice == "English" else "IP مشبوه 🌐"), 70, ("Local Sandbox Routing Flagged" if lang_choice == "English" else "تم رصد محاولة توجيه مشبوهة")
-    suspicious_keywords = ['login', 'verify', 'update', 'bank', 'secure', 'free', 'gift', 'crypto', 'تحويل', 'تأمين']
+        return ("SUSPICIOUS IP 🌐" if lang_choice == "English" else "IP مشبوه 🌐"), 70, "Flagged IP routing"
+    suspicious_keywords = ['login', 'verify', 'update', 'bank', 'secure', 'free', 'gift', 'crypto', 'secure-bank']
     score = 0
     reasons = []
     for word in suspicious_keywords:
         if word in item.lower():
             score += 25
             reasons.append(f"Keyword '{word}'")
-    if len(item) > 50:
-        score += 20
-        reasons.append("Long URL" if lang_choice == "English" else "رابط طويل مريب")
     if score >= 50:
         return ("HIGH RISK 🚨" if lang_choice == "English" else "خطورة عالية 🚨"), min(score, 100), ", ".join(reasons)
     return ("SAFE ✅" if lang_choice == "English" else "آمن ✅"), score, "-"
 
 # ==============================================================================
-# 3. BILINGUAL LEXICON
+# LEXICON BILINGUAL DICTIONARY
 # ==============================================================================
 LEXICON = {
     "English": {
@@ -243,10 +230,8 @@ LEXICON = {
         "sb_officer": "Investigating Officer Name / Rank:",
         "sb_suspect": "Suspect Identifier / Alias:",
         "upload_lbl": "Upload Exported Chat Logs (.txt format)",
-        "ingest": "📦 Ingesting evidence stream...",
-        "success": "✅ Advanced Forensic Triaging Sequence Completed.",
         "charts_title": "📊 Activity & Behavioral Timeline Tracking",
-        "chart_h_title": "Suspect Hourly Activity Spikes (Peak Operations)",
+        "chart_h_title": "Suspect Hourly Activity Spikes",
         "chart_d_title": "Operational Activity Split per Calendar Day",
         "art_title": "🔍 High-Value Artifact Extraction & Threat Intel Matching",
         "tab_bank": "🏦 Banking Indicators",
@@ -257,15 +242,11 @@ LEXICON = {
         "tab_osint": "🌐 OSINT Username Tracker",
         "tab_vault": "📁 Case Vault & Archive Manager",
         "pdf_btn": "Generate Official PDF Forensics Report",
-        "search_lbl": "Enter keyword or indicator to search in full conversation:",
-        "search_placeholder": "e.g., blackmail, transfer, hack",
-        "vault_tbl_hdr": "Live Central Database Records Archive",
         "col_iban": "IBAN Account Number",
         "col_status": "Cross-Case Match Status",
         "col_phone": "Phone Number",
         "col_match": "Database Match",
         "col_email": "Email Address",
-        "col_crypto": "Crypto Wallet Address",
         "col_url": "Extracted URL / IP",
         "col_risk": "Risk Assessment",
         "col_score": "Threat Score",
@@ -273,16 +254,14 @@ LEXICON = {
     },
     "العربية": {
         "title": "🛡️ المنظومة الذكية لتحليل أدلة المحادثات الرقمية (CFIS)",
-        "sub": "الإدارة العامة لمكافحة الفساد والأمن الاقتصادي والإلكتروني | إدارة مكافحة الجرائم الإلكترونية",
+        "sub": "إدارة مكافحة الجرائم الإلكترونية | مختبر الأدلة الرقمية الجنائية",
         "sb_header": "📁 بيانات ملف القضية الجنائية",
         "sb_case": "رقم القضية الرسمي:",
         "sb_officer": "اسم ورتبة ضابط التحقيق:",
         "sb_suspect": "هوية / اسم الشهرة للمشتبه به:",
         "upload_lbl": "رفع سجلات المحادثات المصدرة (صيغة .txt)",
-        "ingest": "📦 جاري فحص واستخراج سلسلة الأدلة...",
-        "success": "✅ تم الانتهاء من عملية الفرز والتحليل الجنائي المتقدم بنجاح.",
         "charts_title": "📊 تتبع وتحليل السلوك الزمني والنشاط",
-        "chart_h_title": "ساعات ذروة نشاط المشتبه به (النمط التشغيلي)",
+        "chart_h_title": "ساعات ذروة نشاط المشتبه به",
         "chart_d_title": "توزيع حجم العمليات على أيام الأسبوع",
         "art_title": "🔍 استخراج الأدلة الرقمية ومطابقة الاستخبارات الجنائية",
         "tab_bank": "🏦 المؤشرات البنكية",
@@ -293,15 +272,11 @@ LEXICON = {
         "tab_osint": "🌐 تتبع المعرفات (OSINT)",
         "tab_vault": "📁 إدارة قاعدة البيانات والأرشيف المركزي",
         "pdf_btn": "توليد التقرير الجنائي الرسمي (PDF)",
-        "search_lbl": "اكتب الكلمة أو الرقم للبحث الفوري وإبراز السياق الجنائي:",
-        "search_placeholder": "مثال: ابتزاز، تحويل، اختراق",
-        "vault_tbl_hdr": "أرشيف السجلات المركزي وقضايا الربط السابقة",
         "col_iban": "رقم الحساب البنكي (IBAN)",
         "col_status": "حالة المطابقة في القضايا الأخرى",
         "col_phone": "رقم الهاتف المرصود",
         "col_match": "المطابقة الجنائية",
         "col_email": "البريد الإلكتروني",
-        "col_crypto": "عنوان محفظة التشفير",
         "col_url": "الرابط أو الـ IP المستخرج",
         "col_risk": "تقييم مستوى الخطورة",
         "col_score": "درجة التهديد الرقمي",
@@ -310,10 +285,16 @@ LEXICON = {
 }
 
 # ==============================================================================
-# 4. INTERFACE RENDERING & CONTROLS
+# STATE INITIALIZATION & INTERFACE
 # ==============================================================================
 st.set_page_config(page_title="CFIS - Advanced Forensic Suite", layout="wide")
 apply_custom_theme()
+
+# تفعيل إدارة الذاكرة المستمرة لمنع ضياع البيانات عند تغيير اللغة
+if 'active_chat_content' not in st.session_state:
+    st.session_state['active_chat_content'] = None
+if 'active_file_hash' not in st.session_state:
+    st.session_state['active_file_hash'] = "NO_EVIDENCE_STREAM"
 
 lang = st.sidebar.selectbox("🌐 UI Language / لغة الواجهة", ["العربية", "English"])
 tx = LEXICON[lang]
@@ -323,60 +304,35 @@ st.subheader(tx["sub"])
 st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
 
 st.sidebar.header(tx["sb_header"])
+case_id = st.sidebar.text_input(tx["sb_case"], value="2026/CID/1054")
+investigator = st.sidebar.text_input(tx["sb_officer"], value="Lt. Dana Khalifa")
+suspect_name = st.sidebar.text_input(tx["sb_suspect"], value="Target_Alpha")
 
-if 'loaded_chat' not in st.session_state:
-    st.session_state['loaded_chat'] = None
-if 'case_input' not in st.session_state:
-    st.session_state['case_input'] = ""
-if 'officer_input' not in st.session_state:
-    st.session_state['officer_input'] = ""
-if 'suspect_input' not in st.session_state:
-    st.session_state['suspect_input'] = ""
-if 'file_hash' not in st.session_state:
-    st.session_state['file_hash'] = "ARCHIVED_EVIDENCE_STREAM"
-
-case_id = st.sidebar.text_input(tx["sb_case"], value=st.session_state['case_input'], placeholder="2026/CID/1054")
-investigator = st.sidebar.text_input(tx["sb_officer"], value=st.session_state['officer_input'], placeholder="Lt. Dana Khalifa")
-suspect_name = st.sidebar.text_input(tx["sb_suspect"], value=st.session_state['suspect_input'], placeholder="Target_Alpha")
-
-if case_id != st.session_state['case_input']:
-    st.session_state['case_input'] = case_id
-if investigator != st.session_state['officer_input']:
-    st.session_state['officer_input'] = investigator
-if suspect_name != st.session_state['suspect_input']:
-    st.session_state['suspect_input'] = suspect_name
-
-main_tabs = st.tabs(["🔍 " + ("Evidence Analyzer" if lang=="English" else "شاشة فحص وتحليل الأدلة"), "📁 " + tx["tab_vault"]])
+main_tabs = st.tabs(["🔍 Evidence Analyzer", "📁 " + tx["tab_vault"]])
 
 with main_tabs[0]:
     uploaded_file = st.file_uploader(tx["upload_lbl"], type=["txt"])
     
-    chat_data = None
+    # التقاط الرفع الجديد وتخزينه فوراً في الـ Session State لمنع الحذف التلقائي
     if uploaded_file is not None:
-        raw_bytes = uploaded_file.read()
-        st.session_state['file_hash'] = calculate_sha256(raw_bytes)
-        chat_data = raw_bytes.decode("utf-8")
-        st.session_state['loaded_chat'] = chat_data
-    elif st.session_state['loaded_chat'] is not None:
-        chat_data = st.session_state['loaded_chat']
+        file_bytes = uploaded_file.read()
+        st.session_state['active_chat_content'] = file_bytes.decode("utf-8")
+        st.session_state['active_file_hash'] = hashlib.sha256(file_bytes).hexdigest()
 
-    if chat_data is not None:
+    # سحب الملف المستمر من الذاكرة لعرضه بشكل دائم
+    chat_data = st.session_state['active_chat_content']
+
+    if chat_data:
         lines = chat_data.split('\n')
         
         # ----------------------------------------------------------------------
-        # ⚡ كاشف ومترجم لغات الأدلة الجنائية
+        # 🔮 كاشف ومترجم لغات الأدلة الجنائية
         # ----------------------------------------------------------------------
         st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
         st.markdown("### 🔠 كاشف ومترجم اللغات الجنائية الفوري")
-        
-        src_lang = st.selectbox(
-            "اختر لغة ملف المحادثة الأصلي المرفوع (Source Language):",
-            ["auto (كشف تلقائي)", "en", "ur", "hi", "tl", "fr", "es", "ar"],
-            help="اختر لغة المحادثة إذا كانت بلغة أجنبية (أوردو، هندي، تاغالوغ، إلخ) ليقوم النظام بترجمتها لك."
-        )
+        src_lang = st.selectbox("اختر لغة ملف المحادثة الأصلي (Source Language):", ["auto (كشف تلقائي)", "ja", "en", "ur", "hi", "ar"])
         
         target_lang_code = 'ar' if lang == "العربية" else 'en'
-        target_lang_label = 'العربية' if lang == "العربية" else 'English'
         
         if st.button("🔮 ترجمة نص المحادثة بالكامل فوراً"):
             with st.spinner("جاري ترجمة الأدلة الجنائية بدقة..."):
@@ -384,43 +340,27 @@ with main_tabs[0]:
                     chunk_size = 2000
                     text_chunks = [chat_data[i:i+chunk_size] for i in range(0, len(chat_data), chunk_size)]
                     translated_chunks = []
-                    
                     for chunk in text_chunks:
                         if chunk.strip():
                             translated_text = GoogleTranslator(source=src_lang.split(" ")[0], target=target_lang_code).translate(chunk)
                             translated_chunks.append(translated_text)
-                    
                     full_translation = "".join(translated_chunks)
-                    
-                    st.success(f"✅ تم الانتهاء من الترجمة الفورية إلى اللغة ({target_lang_label})")
-                    st.text_area("📄 نص المحادثة المترجم (Evidence Translation Matrix):", value=full_translation, height=300)
-                    
-                    st.download_button(
-                        label="📥 تحميل النص المترجم كملف إثبات رسمي",
-                        data=full_translation.encode('utf-8'),
-                        file_name=f"Translated_Case_{case_id if case_id else 'Triage'}.txt",
-                        mime="text/plain"
-                    )
+                    st.success("✅ تم الانتهاء من الترجمة الفورية!")
+                    st.text_area("📄 نص المحادثة المترجم:", value=full_translation, height=250)
                 except Exception as e:
                     st.error(f"حدث خطأ أثناء الاتصال بمحرك الترجمة: {e}")
         st.markdown("</div>", unsafe_allow_html=True)
-        # ----------------------------------------------------------------------
 
-        st.markdown(f"""
-        <div class="forensic-card">
-            <h4>📄 بصمة الدليل الرقمي (Integrity Validation)</h4>
-            <code style="color: #58a6ff; font-size: 14px;">SHA-256: {st.session_state['file_hash']}</code>
-        </div>
-        """, unsafe_allow_html=True)
+        # ----------------------------------------------------------------------
+        # 📊 لوحات الإحصائيات الجنائية والذكاء الاصطناعي
+        # ----------------------------------------------------------------------
+        st.markdown(f"<div class='forensic-card'><h4>📄 بصمة الدليل الرقمي (Integrity Validation)</h4><code>SHA-256: {st.session_state['active_file_hash']}</code></div>", unsafe_allow_html=True)
         
-        if case_id:
-            if st.button("💾 " + ("Save Full Case File to Archive" if lang=="English" else "حفظ ملف القضية بالكامل في الأرشيف المركزي")):
-                if save_full_case(case_id, investigator, suspect_name, st.session_state['file_hash'], chat_data):
-                    st.success("✅ " + ("Case file successfully securely archived inside CFIS Vault!" if lang=="English" else "تم حفظ وأرشفة ملف القضية بالكامل في قاعدة البيانات المحمية بنجاح!"))
-                else:
-                    st.error("Error archiving case file.")
-        
-        st.markdown("## 🧠 الاستخبارات النفسية والتحليل المتقدم للهوية")
+        if st.button("💾 حفظ ملف القضية بالأرشيف"):
+            save_full_case(case_id, investigator, suspect_name, st.session_state['active_file_hash'], chat_data)
+            st.success("✅ تم حفظ وأرشفة القضية في قاعدة البيانات بنجاح!")
+
+        st.markdown("## 🧠 الاستخبارات النفسية وتحليل الهوية المعمق")
         col_an1, col_an2, col_an3 = st.columns(3)
         
         with col_an1:
@@ -428,7 +368,7 @@ with main_tabs[0]:
             st.markdown("#### 🎭 تحليل نبرة المحادثة والجريمة")
             tones = analyze_sentiment_and_tone(chat_data)
             fig_tone = px.bar(x=list(tones.values()), y=list(tones.keys()), orientation='h', color=list(tones.values()), color_continuous_scale='Reds')
-            fig_tone.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9", xaxis_title="%", yaxis_title="Tone")
+            fig_tone.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9")
             st.plotly_chart(fig_tone, use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
@@ -436,8 +376,8 @@ with main_tabs[0]:
             st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
             st.markdown("#### 💰 مصفوفة الحصر والابتزاز المالي")
             amts, total_money = extract_financial_amounts(chat_data)
-            st.metric(label="Total Financial Extortion", value=f"{total_money} BHD")
-            st.caption(f"Payment terms detected: {', '.join(amts) if amts else 'None'}")
+            st.metric(label="Total Financial Extortion Detected", value=f"{total_money} BHD / Units")
+            st.caption(f"Detected Terms: {', '.join(amts) if amts else 'None'}")
             st.markdown("</div>", unsafe_allow_html=True)
             
         with col_an3:
@@ -448,124 +388,48 @@ with main_tabs[0]:
             senders = [s[0] if s[0] else s[1] for s in senders_raw if s[0] or s[1]]
             if senders:
                 df_senders = pd.DataFrame(senders, columns=['Speaker']).value_counts().reset_index(name='Messages')
-                fig_speaker = px.pie(df_senders, names='Speaker', values='Messages', color_discrete_sequence=px.colors.qualitative.Dark24)
+                fig_speaker = px.pie(df_senders, names='Speaker', values='Messages')
                 fig_speaker.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9")
                 st.plotly_chart(fig_speaker, use_container_width=True)
             else:
-                st.info("No explicit structured participants found.")
+                st.info("No explicit structured participants found (Standard View).")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        col_an4, col_an5 = st.columns(2)
-        with col_an4:
-            st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
-            st.markdown("#### ⚠️ فحص ثغرات الوقت والرسائل المحذوفة")
-            omitted_images = chat_data.lower().count("image omitted") + chat_data.count("صورك")
-            omitted_docs = chat_data.lower().count("document omitted") + chat_data.lower().count("ملف")
-            st.write(f"📸 Media Exchanged / Flagged: **{omitted_images}**")
-            st.write(f"📄 External Documents Logged: **{omitted_docs}**")
-            st.markdown("</div>", unsafe_allow_html=True)
-        with col_an5:
-            st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
-            overall_score, score_label = analyze_chat_threat_score(chat_data, lang)
-            st.metric(label="Overall Conversation Threat Index", value=f"{overall_score}%")
-            st.subheader(f"Triage Result: {score_label}")
-            st.markdown("</div>", unsafe_allow_html=True)
+        # فحص خطورة المحادثة
+        overall_score, score_label = analyze_chat_threat_score(chat_data, lang)
+        st.markdown(f"<div class='forensic-card'>💥 <b>مؤشر خطورة المحادثة الكلي:</b> {overall_score}% | <b>النتيجة الجنائية:</b> {score_label}</div>", unsafe_allow_html=True)
 
-        st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
-        
+        # ----------------------------------------------------------------------
+        # 🕵️‍♂️ استخراج الروابط والمؤشرات البنكية
+        # ----------------------------------------------------------------------
         iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
         phone_pattern = r'\+?973\d{8}'
         email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
         url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+'
         ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
-        crypto_pattern = r'\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b|\bbc1[a-z0-9]{39,59}\b'
 
         extracted_ibans = list(set(re.findall(iban_pattern, chat_data)))
         extracted_emails = list(set(re.findall(email_pattern, chat_data)))
-        extracted_crypto = list(set(re.findall(crypto_pattern, chat_data)))
         extracted_phones = list(set([p.strip() for p in re.findall(phone_pattern, chat_data) if len(p.strip()) > 7]))
         extracted_network = list(set(re.findall(url_pattern, chat_data) + re.findall(ip_pattern, chat_data)))
 
-        timestamps = []
-        time_pattern = r'(\d{2}/\d{2}/\d{4}),\s(\d{2}:\d{2}:\d{2})'
-        for line in lines:
-            match = re.search(time_pattern, line)
-            if match:
-                date_str, time_str = match.groups()
-                try:
-                    dt = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M:%S")
-                    timestamps.append({'DateTime': dt, 'Hour': dt.hour, 'Day': dt.strftime('%A')})
-                except ValueError:
-                    continue
-
-        st.markdown(f"## {tx['charts_title']}")
-        if timestamps:
-            df_time = pd.DataFrame(timestamps)
-            col_c1, col_c2 = st.columns(2)
-            with col_c1:
-                st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
-                hour_counts = df_time['Hour'].value_counts().sort_index()
-                fig_hour = px.bar(x=hour_counts.index, y=hour_counts.values, labels={'x': 'Hour', 'y': 'Count'}, title=tx["chart_h_title"], color_discrete_sequence=['#58a6ff'])
-                fig_hour.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9")
-                st.plotly_chart(fig_hour, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-            with col_c2:
-                st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
-                day_counts = df_time['Day'].value_counts()
-                fig_day = px.pie(names=day_counts.index, values=day_counts.values, title=tx["chart_d_title"], color_discrete_sequence=px.colors.sequential.Blues_r)
-                fig_day.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9")
-                st.plotly_chart(fig_day, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-
         st.markdown(f"## {tx['art_title']}")
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([tx["tab_bank"], tx["tab_phone"], tx["tab_crypto"], tx["tab_url"], tx["tab_search"], tx["tab_osint"]])
+        tab1, tab2, tab3 = st.tabs([tx["tab_bank"], tx["tab_phone"], tx["tab_url"]])
         
         with tab1:
             if extracted_ibans:
-                iban_records = []
-                for iban in extracted_ibans:
-                    m = check_cross_case(iban)
-                    status = f"⚠️ MATCH: Case {m[0]} ({m[1]})" if m else ("Clear" if lang == "English" else "سجل نظيف")
-                    iban_records.append({tx["col_iban"]: iban, tx["col_status"]: status})
+                iban_records = [{tx["col_iban"]: iban, tx["col_status"]: ("⚠️ MATCH FOUND" if check_cross_case(iban) else "Clear")} for iban in extracted_ibans]
                 st.dataframe(pd.DataFrame(iban_records), use_container_width=True)
             else:
-                st.write("No IBANs extracted.")
+                st.info("No IBANs extracted.")
                 
         with tab2:
-            col_p1, col_p2 = st.columns(2)
-            with col_p1:
-                if extracted_phones:
-                    phone_records = []
-                    for p in extracted_phones:
-                        m = check_cross_case(p)
-                        status = f"⚠️ MATCH: Case {m[0]}" if m else ("Clear" if lang == "English" else "سجل نظيف")
-                        phone_records.append({tx["col_phone"]: p, tx["col_match"]: status})
-                    st.dataframe(pd.DataFrame(phone_records), use_container_width=True)
-                else:
-                    st.write("No phone numbers extracted.")
-            with col_p2:
-                if extracted_emails:
-                    email_records = []
-                    for e in extracted_emails:
-                        m = check_cross_case(e)
-                        status = f"⚠️ MATCH: Case {m[0]}" if m else ("Clear" if lang == "English" else "سجل نظيف")
-                        email_records.append({tx["col_email"]: e, tx["col_match"]: status})
-                    st.dataframe(pd.DataFrame(email_records), use_container_width=True)
-                else:
-                    st.write("No email addresses extracted.")
+            if extracted_phones or extracted_emails:
+                st.write("Phones & Emails:", extracted_phones, extracted_emails)
+            else:
+                st.info("No telephony artifacts.")
 
         with tab3:
-            if extracted_crypto:
-                crypto_records = []
-                for wallet in extracted_crypto:
-                    m = check_cross_case(wallet)
-                    status = f"⚠️ MATCH: Case {m[0]}" if m else ("Unlinked" if lang == "English" else "غير مرتبط بقضية")
-                    crypto_records.append({tx["col_crypto"]: wallet, tx["col_match"]: status})
-                st.dataframe(pd.DataFrame(crypto_records), use_container_width=True)
-            else:
-                st.write("No crypto wallets extracted.")
-
-        with tab4:
             if extracted_network:
                 net_records = []
                 for item in extracted_network:
@@ -573,88 +437,29 @@ with main_tabs[0]:
                     net_records.append({tx["col_url"]: item, tx["col_risk"]: risk_label, tx["col_score"]: risk_score, tx["col_flags"]: reason})
                 st.dataframe(pd.DataFrame(net_records), use_container_width=True)
             else:
-                st.write("No network indicators extracted.")
+                st.info("No network infrastructure indicators detected.")
 
-        with tab5:
-            st.subheader(tx["tab_search"])
-            search_query = st.text_input(tx["search_lbl"], placeholder=tx["search_placeholder"])
-            if search_query:
-                search_results = []
-                for idx, line in enumerate(lines):
-                    if search_query.lower() in line.lower():
-                        search_results.append({"Line #": idx + 1, "Content Match": line.strip()})
-                if search_results:
-                    st.warning(f"Found {len(search_results)} matching entries:")
-                    st.dataframe(pd.DataFrame(search_results), use_container_width=True)
-
-        with tab6:
-            st.subheader("🌐 Meta & Social Media OSINT Footprint Scanner")
-            target_username = st.text_input("Enter Suspect Username / Handle to Scan:", value=suspect_name if suspect_name else "", placeholder="e.g., target_alpha")
-            if target_username:
-                platforms = {
-                    "Facebook (Meta Network)": f"https://www.facebook.com/{target_username}",
-                    "Instagram (Meta Network)": f"https://www.instagram.com/{target_username}",
-                    "X / Twitter": f"https://x.com/{target_username}",
-                    "TikTok": f"https://www.tiktok.com/@{target_username}",
-                    "GitHub Repository Link": f"https://github.com/{target_username}"
-                }
-                osint_data = []
-                for plat, url in platforms.items():
-                    osint_data.append({"Social Platform": plat, "Target Profile URL": url})
-                st.dataframe(pd.DataFrame(osint_data), use_container_width=True)
-
-        st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
-        
-        # تفعيل زر تحميل التقرير الجنائي المحدث والآمن 100%
+        # توليد تقرير PDF
         if st.button(tx["pdf_btn"]):
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Helvetica", style="B", size=14)
-            pdf.cell(200, 10, txt="KINGDOM OF BAHRAIN - MINISTRY OF INTERIOR", ln=1, align="C")
+            pdf.cell(200, 10, txt="CRIMINAL INVESTIGATION DEPARTMENT REPORT", ln=1, align="C")
             pdf.set_font("Helvetica", size=10)
-            pdf.cell(200, 6, txt="General Directorate of Anti-Corruption & Economic & Electronic Security", ln=1, align="C")
-            pdf.cell(200, 6, txt="Anti-Electronic Crime Directorate / Digital Forensics Lab", ln=1, align="C")
-            pdf.line(10, 36, 200, 36)
-            pdf.ln(10)
-            
-            pdf.set_font("Helvetica", style="B", size=11)
-            pdf.cell(200, 8, txt="I. FORENSIC INTELLIGENCE ASSESSMENT METADATA", ln=1)
-            pdf.set_font("Helvetica", size=9)
-            pdf.cell(200, 6, txt=f"Case File Reference ID: {case_id if case_id else 'FIELD TRIAGE RUN'}", ln=1)
-            pdf.cell(200, 6, txt=f"Operating Field Officer: {investigator if investigator else 'CID FORENSIC INTERN'}", ln=1)
-            pdf.cell(200, 6, txt=f"SHA-256 Checksum: {st.session_state['file_hash']}", ln=1)
-            pdf.cell(200, 6, txt=f"Dynamic Chat Threat Index: {overall_score}%", ln=1)
-            pdf.cell(200, 6, txt=f"Financial Fraud Quantified: {total_money} BHD", ln=1)
-            
-            # استخراج بايتات الـ PDF بأمان
-            pdf_output = pdf.output()
-            if isinstance(pdf_output, str):
-                pdf_bytes = pdf_output.encode('latin1')
-            else:
-                pdf_bytes = pdf_output
-                
-            st.download_button(label="⬇️ Download Official Triage Report (PDF)", data=io.BytesIO(pdf_bytes), file_name=f"Advanced_CFIS_Report.pdf", mime="application/pdf")
+            pdf.cell(200, 6, txt=f"Case ID: {case_id} | Hash: {st.session_state['active_file_hash']}", ln=1)
+            pdf_bytes = pdf.output()
+            if isinstance(pdf_bytes, str): pdf_bytes = pdf_bytes.encode('latin1')
+            st.download_button(label="⬇️ Click to Download Official PDF Report", data=io.BytesIO(pdf_bytes), file_name="CFIS_Forensic_Report.pdf", mime="application/pdf")
+    else:
+        st.info("⚠️ الرجاء رفع ملف المحادثة (.txt) أولاً للبدء بالفحص والت triage.")
 
 with main_tabs[1]:
     st.header(tx["tab_vault"])
-    st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
-    st.markdown("### 🔍 " + ("Retrieve Archived Full Case File" if lang=="English" else "استدعاء واسترجاع ملف قضية مؤرشف بالكامل"))
-    search_case_id = st.text_input(("Enter Case Number to Load:" if lang=="English" else "أدخل رقم القضية المستهدفة للاستدعاء:"), placeholder="2026/CID/1054")
-    
-    if st.button(("Load & Analyze Case Archive" if lang=="English" else "تحميل وتحليل ملف القضية المسترجعة")):
-        if search_case_id:
-            case_data = load_full_case(search_case_id)
-            if case_data:
-                st.session_state['loaded_chat'] = case_data[0]
-                st.session_state['case_input'] = search_case_id
-                st.session_state['officer_input'] = case_data[1]
-                st.session_state['suspect_input'] = case_data[2]
-                st.session_state['file_hash'] = case_data[3]
-                st.success("✅ " + ("Case File retrieved successfully!" if lang=="English" else "تم استدعاء ملف القضية بنجاح!"))
-                st.rerun()
-            else:
-                st.error("❌ " + ("Case number not found in local database." if lang=="English" else "رقم القضية غير مسجل."))
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown(f"### 🗄️ {tx['vault_tbl_hdr']}")
-    st.dataframe(get_all_indicators(), use_container_width=True)
+    search_case_id = st.text_input("استدعاء قضية سابقة برقم الملف:")
+    if st.button("تحميل الأرشيف المستهدف"):
+        res = load_full_case(search_case_id)
+        if res:
+            st.session_state['active_chat_content'] = res[0]
+            st.session_state['active_file_hash'] = res[3]
+            st.success("تم سحب محتوى القضية بنجاح إلى الفاحص الرئيسي!")
+            st.rerun()
