@@ -7,7 +7,7 @@ import hashlib
 from datetime import datetime
 from fpdf import FPDF
 import io
-# استيراد محرك الترجمة المستقر والحديث
+# استيراد محرك الترجمة المستقر
 from deep_translator import GoogleTranslator
 
 # ==============================================================================
@@ -315,7 +315,6 @@ LEXICON = {
 st.set_page_config(page_title="CFIS - Advanced Forensic Suite", layout="wide")
 apply_custom_theme()
 
-# التحكم في لغة الواجهة الرئيسية للمحقق
 lang = st.sidebar.selectbox("🌐 UI Language / لغة الواجهة", ["العربية", "English"])
 tx = LEXICON[lang]
 
@@ -365,40 +364,37 @@ with main_tabs[0]:
         lines = chat_data.split('\n')
         
         # ----------------------------------------------------------------------
-        # ⚡ ميزة كاشف ومترجم لغات الأدلة الجنائية (FORENSIC LANGUAGE TRANSLATOR)
+        # ⚡ كاشف ومترجم لغات الأدلة الجنائية
         # ----------------------------------------------------------------------
         st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
         st.markdown("### 🔠 كاشف ومترجم اللغات الجنائية الفوري")
         
-        # اختيار اللغة الأصلية للمحادثة المرفوعة (تلقائي أو مخصص)
         src_lang = st.selectbox(
             "اختر لغة ملف المحادثة الأصلي المرفوع (Source Language):",
             ["auto (كشف تلقائي)", "en", "ur", "hi", "tl", "fr", "es", "ar"],
             help="اختر لغة المحادثة إذا كانت بلغة أجنبية (أوردو، هندي، تاغالوغ، إلخ) ليقوم النظام بترجمتها لك."
         )
         
-        # لغة الترجمة المستهدفة للمحقق بناءً على لغة واجهته
         target_lang_code = 'ar' if lang == "العربية" else 'en'
         target_lang_label = 'العربية' if lang == "العربية" else 'English'
         
         if st.button("🔮 ترجمة نص المحادثة بالكامل فوراً"):
-            with st.spinner("جاري ترجمة الأدلة الجنائية بدقة والحفاظ على البنية الزمنية..."):
+            with st.spinner("جاري ترجمة الأدلة الجنائية بدقة..."):
                 try:
-                    # تقسيم النص إلى فقرات لتجنب تجاوز ليميت المنصة للترجمة
                     chunk_size = 2000
                     text_chunks = [chat_data[i:i+chunk_size] for i in range(0, len(chat_data), chunk_size)]
                     translated_chunks = []
                     
                     for chunk in text_chunks:
-                        translated_text = GoogleTranslator(source=src_lang.split(" ")[0], target=target_lang_code).translate(chunk)
-                        translated_chunks.append(translated_text)
+                        if chunk.strip():
+                            translated_text = GoogleTranslator(source=src_lang.split(" ")[0], target=target_lang_code).translate(chunk)
+                            translated_chunks.append(translated_text)
                     
                     full_translation = "".join(translated_chunks)
                     
                     st.success(f"✅ تم الانتهاء من الترجمة الفورية إلى اللغة ({target_lang_label})")
                     st.text_area("📄 نص المحادثة المترجم (Evidence Translation Matrix):", value=full_translation, height=300)
                     
-                    # إتاحة زر لحفظ النص المترجم في ملف منفصل للمحقق
                     st.download_button(
                         label="📥 تحميل النص المترجم كملف إثبات رسمي",
                         data=full_translation.encode('utf-8'),
@@ -424,7 +420,6 @@ with main_tabs[0]:
                 else:
                     st.error("Error archiving case file.")
         
-        # --- ADVANCED ANALYTICS INTERFACES ---
         st.markdown("## 🧠 الاستخبارات النفسية والتحليل المتقدم للهوية")
         col_an1, col_an2, col_an3 = st.columns(3)
         
@@ -432,8 +427,8 @@ with main_tabs[0]:
             st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
             st.markdown("#### 🎭 تحليل نبرة المحادثة والجريمة")
             tones = analyze_sentiment_and_tone(chat_data)
-            fig_tone = px.bar(x=list(tones.values()), y=list(tones.keys()), orientation='h', labels={'x': 'Correlation (%)', 'y': 'Tone Classification'}, color=list(tones.values()), color_continuous_scale='Reds')
-            fig_tone.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9")
+            fig_tone = px.bar(x=list(tones.values()), y=list(tones.keys()), orientation='h', color=list(tones.values()), color_continuous_scale='Reds')
+            fig_tone.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9", xaxis_title="%", yaxis_title="Tone")
             st.plotly_chart(fig_tone, use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
@@ -478,9 +473,8 @@ with main_tabs[0]:
 
         st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
         
-        # Forensic Pattern Scanners (Regex)
         iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
-        phone_pattern = r'\+?973\d{8}|\+?\d{1,4}?[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}'
+        phone_pattern = r'\+?973\d{8}'
         email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
         url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+'
         ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
@@ -608,17 +602,10 @@ with main_tabs[0]:
                 for plat, url in platforms.items():
                     osint_data.append({"Social Platform": plat, "Target Profile URL": url})
                 st.dataframe(pd.DataFrame(osint_data), use_container_width=True)
-                
-                st.markdown("#### 🔗 Launch Quick Verification Profiles")
-                col_btn1, col_btn2, col_btn3 = st.columns(3)
-                with col_btn1:
-                    st.link_button("🌐 Open Facebook Profile", platforms["Facebook (Meta Network)"])
-                with col_btn2:
-                    st.link_button("📸 Open Instagram Profile", platforms["Instagram (Meta Network)"])
-                with col_btn3:
-                    st.link_button("🐦 Open X / Twitter", platforms["X / Twitter"])
 
         st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
+        
+        # تفعيل زر تحميل التقرير الجنائي المحدث والآمن 100%
         if st.button(tx["pdf_btn"]):
             pdf = FPDF()
             pdf.add_page()
@@ -639,13 +626,14 @@ with main_tabs[0]:
             pdf.cell(200, 6, txt=f"Dynamic Chat Threat Index: {overall_score}%", ln=1)
             pdf.cell(200, 6, txt=f"Financial Fraud Quantified: {total_money} BHD", ln=1)
             
-            try:
-                pdf_bytes = pdf.output(dest='S').encode('latin1') if isinstance(pdf.output(dest='S'), str) else pdf.output(dest='S')
-            except:
-                pdf_bytes = pdf.output()
+            # استخراج بايتات الـ PDF بأمان
+            pdf_output = pdf.output()
+            if isinstance(pdf_output, str):
+                pdf_bytes = pdf_output.encode('latin1')
+            else:
+                pdf_bytes = pdf_output
                 
-            pdf_buffer = io.BytesIO(pdf_bytes)
-            st.download_button(label="⬇️ Download Official Triage Report (PDF)", data=pdf_buffer, file_name=f"Advanced_CFIS_Report.pdf", mime="application/pdf")
+            st.download_button(label="⬇️ Download Official Triage Report (PDF)", data=io.BytesIO(pdf_bytes), file_name=f"Advanced_CFIS_Report.pdf", mime="application/pdf")
 
 with main_tabs[1]:
     st.header(tx["tab_vault"])
@@ -662,10 +650,10 @@ with main_tabs[1]:
                 st.session_state['officer_input'] = case_data[1]
                 st.session_state['suspect_input'] = case_data[2]
                 st.session_state['file_hash'] = case_data[3]
-                st.success("✅ " + ("Case File retrieved successfully! Switch to 'Evidence Analyzer' tab to view analyses." if lang=="English" else "تم استدعاء ملف القضية بنجاح! انتقلي إلى تبويب 'شاشة فحص وتحليل الأدلة' لمشاهدة التحليلات فوراً."))
+                st.success("✅ " + ("Case File retrieved successfully!" if lang=="English" else "تم استدعاء ملف القضية بنجاح!"))
                 st.rerun()
             else:
-                st.error("❌ " + ("Case number not found in local database." if lang=="English" else "رقم القضية غير مسجل في قاعدة البيانات المحلية."))
+                st.error("❌ " + ("Case number not found in local database." if lang=="English" else "رقم القضية غير مسجل."))
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown(f"### 🗄️ {tx['vault_tbl_hdr']}")
