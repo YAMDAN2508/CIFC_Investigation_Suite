@@ -168,27 +168,24 @@ def get_all_indicators():
 # OSINT & SOCIAL MEDIA RECONNAISSANCE ENGINE
 # ==============================================================================
 def check_social_media_account(platform_name, profile_url):
-    """Pings public endpoints to verify profile availability."""
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ForensicSuite/1.0'}
     try:
         response = requests.get(profile_url, headers=headers, timeout=4, allow_redirects=True)
         if response.status_code == 200:
-            return "EXISTS / ACTIVE 🟢", profile_url
+            return "EXISTS / ACTIVE", profile_url
         elif response.status_code == 404:
-            return "NOT FOUND 🔴", profile_url
+            return "NOT FOUND", profile_url
         else:
-            return f"UNCERTAIN ({response.status_code}) 🟡", profile_url
+            return f"UNCERTAIN ({response.status_code})", profile_url
     except requests.RequestException:
-        return "CHECK FAILED / BLOCKED ⚠️", profile_url
+        return "CHECK FAILED / BLOCKED", profile_url
 
 def extract_usernames_and_handles(text):
-    """Extracts @handles and prefixes from emails/chat text."""
     mentions = re.findall(r'@([a-zA-Z0-9_]{3,30})', text)
     emails = re.findall(r'([a-zA-Z0-9._%+-]+)@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
     explicit_users = re.findall(r'\b(?:username|user|المستخدم|يوزر|حساب|اليوزر)\s*[:=]?\s*([a-zA-Z0-9._-]+)\b', text, re.IGNORECASE)
     
     combined = set(mentions + emails + explicit_users)
-    # Filter out generic email domains if caught accidentally
     ignored = {'gmail', 'yahoo', 'hotmail', 'outlook', 'icloud', 'com', 'org', 'net'}
     return [u for u in combined if u.lower() not in ignored and len(u) >= 3]
 
@@ -246,6 +243,92 @@ def analyze_url_or_ip(item, lang_choice):
     if score >= 50:
         return ("HIGH RISK 🚨" if lang_choice == "English" else "خطورة عالية 🚨"), min(score, 100), ", ".join(reasons)
     return ("SAFE ✅" if lang_choice == "English" else "آمن ✅"), score, "-"
+
+# ==============================================================================
+# PDF REPORT GENERATION ENGINE (FULL DYNAMIC REPORT)
+# ==============================================================================
+def sanitize_str(s):
+    """Sanitizes text for FPDF Latin-1 compatibility."""
+    if not s:
+        return ""
+    return str(s).encode('latin-1', 'replace').decode('latin-1')
+
+def create_forensic_pdf(case_id, officer, suspect, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    
+    # Title & Header
+    pdf.set_font("Helvetica", style="B", size=16)
+    pdf.cell(0, 10, txt="DIGITAL FORENSICS INVESTIGATION REPORT", ln=1, align="C")
+    pdf.set_font("Helvetica", size=10)
+    pdf.cell(0, 6, txt="ANTI-ELECTRONIC CRIMES DIRECTORATE - GENERAL DIRECTORATE OF ANTI-CORRUPTION", ln=1, align="C")
+    pdf.ln(5)
+    
+    # Line separator
+    pdf.set_line_width(0.5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(8)
+    
+    # Metadata Section
+    pdf.set_font("Helvetica", style="B", size=12)
+    pdf.cell(0, 8, txt="1. CASE METADATA & EVIDENCE INTEGRITY", ln=1)
+    pdf.set_font("Helvetica", size=10)
+    pdf.cell(50, 6, txt=f"Official Case Number:", border=0)
+    pdf.cell(0, 6, txt=sanitize_str(case_id), ln=1)
+    pdf.cell(50, 6, txt=f"Investigating Officer:", border=0)
+    pdf.cell(0, 6, txt=sanitize_str(officer), ln=1)
+    pdf.cell(50, 6, txt=f"Target Suspect/Alias:", border=0)
+    pdf.cell(0, 6, txt=sanitize_str(suspect), ln=1)
+    pdf.cell(50, 6, txt=f"Evidence Hash (SHA-256):", border=0)
+    pdf.cell(0, 6, txt=sanitize_str(file_hash[:40] + "..."), ln=1)
+    pdf.cell(50, 6, txt=f"Report Generated On:", border=0)
+    pdf.cell(0, 6, txt=datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ln=1)
+    pdf.ln(5)
+    
+    # Threat Score Section
+    pdf.set_font("Helvetica", style="B", size=12)
+    pdf.cell(0, 8, txt="2. TRIAGE & RISK ASSESSMENT SUMMARY", ln=1)
+    pdf.set_font("Helvetica", size=10)
+    pdf.cell(50, 6, txt=f"Threat Index Score:", border=0)
+    pdf.cell(0, 6, txt=f"{score}%", ln=1)
+    pdf.cell(50, 6, txt=f"Risk Classification:", border=0)
+    pdf.cell(0, 6, txt=sanitize_str(score_label), ln=1)
+    pdf.cell(50, 6, txt=f"Extortion Amounts Detected:", border=0)
+    pdf.cell(0, 6, txt=f"{total_money} BHD / Units", ln=1)
+    pdf.ln(5)
+    
+    # Artifact Extraction Section
+    pdf.set_font("Helvetica", style="B", size=12)
+    pdf.cell(0, 8, txt="3. EXTRACTED FORENSIC ARTIFACTS", ln=1)
+    pdf.set_font("Helvetica", size=10)
+    pdf.cell(0, 6, txt=f"IBAN Accounts ({len(ibans)}): " + sanitize_str(", ".join(ibans) if ibans else "None Identified"), ln=1)
+    pdf.cell(0, 6, txt=f"Phone Numbers ({len(phones)}): " + sanitize_str(", ".join(phones) if phones else "None Identified"), ln=1)
+    pdf.cell(0, 6, txt=f"Email Addresses ({len(emails)}): " + sanitize_str(", ".join(emails) if emails else "None Identified"), ln=1)
+    pdf.cell(0, 6, txt=f"URLs & IP Addresses ({len(urls)}): " + sanitize_str(", ".join(urls) if urls else "None Identified"), ln=1)
+    pdf.ln(5)
+    
+    # OSINT & Social Media Recon
+    pdf.set_font("Helvetica", style="B", size=12)
+    pdf.cell(0, 8, txt="4. SOCIAL MEDIA & OSINT RECONNAISSANCE SUMMARY", ln=1)
+    pdf.set_font("Helvetica", size=10)
+    if recon_data:
+        for r in recon_data:
+            platform = sanitize_str(r.get("Platform", ""))
+            url = sanitize_str(r.get("URL", ""))
+            status = sanitize_str(r.get("Status", ""))
+            pdf.cell(0, 6, txt=f"- [{platform}]: {status} -> {url}", ln=1)
+    else:
+        pdf.cell(0, 6, txt="No social media reconnaissance scan executed during this session.", ln=1)
+        
+    pdf.ln(10)
+    pdf.set_font("Helvetica", style="I", size=9)
+    pdf.cell(0, 6, txt="--- End of Official CFIS Forensic Document ---", align="C")
+    
+    pdf_bytes = pdf.output()
+    if isinstance(pdf_bytes, str): 
+        pdf_bytes = pdf_bytes.encode('latin1')
+    return pdf_bytes
 
 # ==============================================================================
 # BILINGUAL LOCALIZATION LEXICON
@@ -367,6 +450,8 @@ if 'active_file_hash' not in st.session_state:
     st.session_state['active_file_hash'] = "NO_EVIDENCE_STREAM"
 if 'translated_chat_content' not in st.session_state:
     st.session_state['translated_chat_content'] = None
+if 'last_osint_results' not in st.session_state:
+    st.session_state['last_osint_results'] = []
 
 lang = st.sidebar.selectbox("🌐 UI Language / لغة الواجهة", ["العربية", "English"])
 tx = LEXICON[lang]
@@ -403,7 +488,7 @@ with main_tabs[0]:
 
     if chat_data:
         # ----------------------------------------------------------------------
-        # 🔮 TRANSLATION ENGINE
+        # TRANSLATION ENGINE
         # ----------------------------------------------------------------------
         st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
         st.markdown(f"### {tx['trans_header']}")
@@ -437,7 +522,7 @@ with main_tabs[0]:
         st.markdown("</div>", unsafe_allow_html=True)
 
         # ----------------------------------------------------------------------
-        # 📊 STATISTICAL CARDS & VISUALIZATIONS
+        # STATISTICAL CARDS & VISUALIZATIONS
         # ----------------------------------------------------------------------
         st.markdown(f"<div class='forensic-card'><h4>{tx['checksum_lbl']}</h4><code>SHA-256: {st.session_state['active_file_hash']}</code></div>", unsafe_allow_html=True)
         
@@ -445,6 +530,7 @@ with main_tabs[0]:
             st.session_state['active_chat_content'] = None
             st.session_state['translated_chat_content'] = None
             st.session_state['active_file_hash'] = "NO_EVIDENCE_STREAM"
+            st.session_state['last_osint_results'] = []
             st.rerun()
 
         if st.button(tx["save_vault_btn"]):
@@ -490,7 +576,7 @@ with main_tabs[0]:
         st.markdown(f"<div class='forensic-card'>{tx['threat_idx']} {overall_score}% {tx['forensic_triage_res']} {score_label}</div>", unsafe_allow_html=True)
 
         # ----------------------------------------------------------------------
-        # 🕵️‍♂️ ARTIFACT EXTRACTION & OSINT RECONNAISSANCE TABS
+        # ARTIFACT EXTRACTION & OSINT RECONNAISSANCE TABS
         # ----------------------------------------------------------------------
         iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
         phone_pattern = r'\+?973\d{8}'
@@ -560,14 +646,17 @@ with main_tabs[0]:
                         for plat, url in platforms_to_check.items():
                             status, target_url = check_social_media_account(plat, url)
                             recon_results.append({
+                                "Platform": plat,
+                                "URL": target_url,
+                                "Status": status,
                                 tx["col_platform"]: plat,
                                 tx["col_profile"]: target_url,
                                 tx["col_osint_status"]: status
                             })
                         
-                        st.dataframe(pd.DataFrame(recon_results), use_container_width=True)
+                        st.session_state['last_osint_results'] = recon_results
+                        st.dataframe(pd.DataFrame(recon_results)[[tx["col_platform"], tx["col_profile"], tx["col_osint_status"]]], use_container_width=True)
                         
-                        # Direct OSINT Aggregator Shortcuts
                         st.markdown("#### 🔗 Deep External OSINT Investigation Links:")
                         col_link1, col_link2 = st.columns(2)
                         with col_link1:
@@ -577,14 +666,32 @@ with main_tabs[0]:
                 else:
                     st.warning("Please enter or select a valid handle to scan.")
 
-        if st.button(tx["pdf_btn"]):
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Helvetica", style="B", size=14)
-            pdf.cell(200, 10, txt="MINISTRY OF INTERIOR - CRIMINAL INVESTIGATION LAB", ln=1, align="C")
-            pdf_bytes = pdf.output()
-            if isinstance(pdf_bytes, str): pdf_bytes = pdf_bytes.encode('latin1')
-            st.download_button(label="⬇️ Download PDF Report", data=io.BytesIO(pdf_bytes), file_name=f"CFIS_Report_{case_id.replace('/', '_')}.pdf", mime="application/pdf")
+        # ----------------------------------------------------------------------
+        # FULL DYNAMIC PDF GENERATOR DOWNLOAD BUTTON
+        # ----------------------------------------------------------------------
+        st.markdown("<br>", unsafe_allow_html=True)
+        pdf_bytes = create_forensic_pdf(
+            case_id=case_id,
+            officer=investigator,
+            suspect=suspect_name,
+            file_hash=st.session_state['active_file_hash'],
+            score=overall_score,
+            score_label=score_label,
+            ibans=extracted_ibans,
+            emails=extracted_emails,
+            phones=extracted_phones,
+            urls=extracted_network,
+            total_money=total_money,
+            recon_data=st.session_state['last_osint_results']
+        )
+        
+        st.download_button(
+            label=f"⬇️ {tx['pdf_btn']}",
+            data=pdf_bytes,
+            file_name=f"CFIS_Forensic_Report_{case_id.replace('/', '_')}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
     else:
         st.info(tx["no_evidence_msg"])
 
