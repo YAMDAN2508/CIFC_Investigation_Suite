@@ -5,14 +5,18 @@ import re
 import sqlite3
 import hashlib
 from datetime import datetime
-from fpdf import FPDF
 import io
 import requests
 from deep_translator import GoogleTranslator
+
+# ==============================================================================
+# REPORTLAB PDF ENGINE IMPORTS
+# ==============================================================================
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+
 # ==============================================================================
 # CSS CUSTOM STYLING (THEME & TYPOGRAPHY)
 # ==============================================================================
@@ -206,10 +210,10 @@ def analyze_chat_threat_score(text, lang_choice):
     score = min(score, 100)
     
     if score >= 60:
-        return score, "CRITICAL RISK 🚨" if lang_choice == "English" else "مستوى خطر حرج 🚨"
+        return score, "CRITICAL RISK" if lang_choice == "English" else "مستوى خطر حرج"
     elif score >= 25:
-        return score, "MEDIUM RISK ⚠️" if lang_choice == "English" else "مستوى خطر متوسط ⚠️"
-    return score, "LOW RISK ✅" if lang_choice == "English" else "مستوى خطر منخفض ✅"
+        return score, "MEDIUM RISK" if lang_choice == "English" else "مستوى خطر متوسط"
+    return score, "LOW RISK" if lang_choice == "English" else "مستوى خطر منخفض"
 
 def analyze_sentiment_and_tone(text):
     threat_words = ['تهديد', 'ابتزاز', 'فضيحة', 'بفضحك', 'انشر', 'صورك', 'blackmail', 'expose', 'threat', '不正', '脅迫', '拡散']
@@ -235,7 +239,7 @@ def extract_financial_amounts(text):
 def analyze_url_or_ip(item, lang_choice):
     is_ip = re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', item)
     if is_ip:
-        return ("SUSPICIOUS IP 🌐" if lang_choice == "English" else "IP مشبوه 🌐"), 70, "Flagged Infrastructure routing"
+        return ("SUSPICIOUS IP" if lang_choice == "English" else "IP مشبوه"), 70, "Flagged Infrastructure routing"
     suspicious_keywords = ['login', 'verify', 'update', 'bank', 'secure', 'free', 'gift', 'crypto', 'secure-bank']
     score = 0
     reasons = []
@@ -244,94 +248,138 @@ def analyze_url_or_ip(item, lang_choice):
             score += 25
             reasons.append(f"Keyword '{word}'")
     if score >= 50:
-        return ("HIGH RISK 🚨" if lang_choice == "English" else "خطورة عالية 🚨"), min(score, 100), ", ".join(reasons)
-    return ("SAFE ✅" if lang_choice == "English" else "آمن ✅"), score, "-"
+        return ("HIGH RISK" if lang_choice == "English" else "خطورة عالية"), min(score, 100), ", ".join(reasons)
+    return ("SAFE" if lang_choice == "English" else "آمن"), score, "-"
 
 # ==============================================================================
-# PDF REPORT GENERATION ENGINE (FULL DYNAMIC REPORT)
+# REPORTLAB PDF GENERATOR FUNCTION
 # ==============================================================================
-def sanitize_str(s):
-    """Sanitizes text for FPDF Latin-1 compatibility."""
-    if not s:
-        return ""
-    return str(s).encode('latin-1', 'replace').decode('latin-1')
+def create_reportlab_pdf(case_id, officer, suspect, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        leading=20,
+        alignment=1,
+        textColor=colors.HexColor('#0f2b48')
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontSize=9,
+        leading=12,
+        alignment=1,
+        textColor=colors.HexColor('#4a5568')
+    )
+    
+    h2_style = ParagraphStyle(
+        'SectionHeader',
+        parent=styles['Heading2'],
+        fontSize=12,
+        leading=16,
+        textColor=colors.HexColor('#1a365d'),
+        spaceBefore=12,
+        spaceAfter=6
+    )
+    
+    body_style = ParagraphStyle(
+        'BodyTextCustom',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor('#2d3748')
+    )
 
-def create_forensic_pdf(case_id, officer, suspect, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
+    story = []
+
+    # Title Banner
+    story.append(Paragraph("DIGITAL FORENSICS INVESTIGATION REPORT", title_style))
+    story.append(Paragraph("GENERAL DIRECTORATE OF ANTI-CORRUPTION & ECONOMIC & ELECTRONIC SECURITY", subtitle_style))
+    story.append(Spacer(1, 15))
+
+    # Metadata Table
+    meta_data = [
+        [Paragraph("<b>Case Number:</b>", body_style), Paragraph(str(case_id), body_style)],
+        [Paragraph("<b>Investigating Officer:</b>", body_style), Paragraph(str(officer), body_style)],
+        [Paragraph("<b>Target Suspect / Alias:</b>", body_style), Paragraph(str(suspect), body_style)],
+        [Paragraph("<b>Evidence Hash (SHA-256):</b>", body_style), Paragraph(str(file_hash), body_style)],
+        [Paragraph("<b>Generated On:</b>", body_style), Paragraph(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), body_style)]
+    ]
+    meta_table = Table(meta_data, colWidths=[150, 390])
+    meta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f7fafc')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#e2e8f0')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#edf2f7')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 5),
+    ]))
     
-    # Title & Header
-    pdf.set_font("Helvetica", style="B", size=16)
-    pdf.cell(0, 10, txt="DIGITAL FORENSICS INVESTIGATION REPORT", ln=1, align="C")
-    pdf.set_font("Helvetica", size=10)
-    pdf.cell(0, 6, txt="ANTI-ELECTRONIC CRIMES DIRECTORATE - GENERAL DIRECTORATE OF ANTI-CORRUPTION", ln=1, align="C")
-    pdf.ln(5)
+    story.append(Paragraph("1. Case Metadata & Evidence Integrity", h2_style))
+    story.append(meta_table)
+    story.append(Spacer(1, 10))
+
+    # Risk Table
+    risk_data = [
+        [Paragraph("<b>Threat Index Score</b>", body_style), Paragraph("<b>Risk Classification</b>", body_style), Paragraph("<b>Detected Financial Extortion</b>", body_style)],
+        [Paragraph(f"<b>{score}%</b>", body_style), Paragraph(str(score_label), body_style), Paragraph(f"{total_money} BHD / Units", body_style)]
+    ]
+    risk_table = Table(risk_data, colWidths=[180, 180, 180])
+    risk_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#ebf8ff')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e0')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('PADDING', (0,0), (-1,-1), 6),
+    ]))
     
-    # Line separator
-    pdf.set_line_width(0.5)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(8)
-    
-    # Metadata Section
-    pdf.set_font("Helvetica", style="B", size=12)
-    pdf.cell(0, 8, txt="1. CASE METADATA & EVIDENCE INTEGRITY", ln=1)
-    pdf.set_font("Helvetica", size=10)
-    pdf.cell(50, 6, txt=f"Official Case Number:", border=0)
-    pdf.cell(0, 6, txt=sanitize_str(case_id), ln=1)
-    pdf.cell(50, 6, txt=f"Investigating Officer:", border=0)
-    pdf.cell(0, 6, txt=sanitize_str(officer), ln=1)
-    pdf.cell(50, 6, txt=f"Target Suspect/Alias:", border=0)
-    pdf.cell(0, 6, txt=sanitize_str(suspect), ln=1)
-    pdf.cell(50, 6, txt=f"Evidence Hash (SHA-256):", border=0)
-    pdf.cell(0, 6, txt=sanitize_str(file_hash[:40] + "..."), ln=1)
-    pdf.cell(50, 6, txt=f"Report Generated On:", border=0)
-    pdf.cell(0, 6, txt=datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ln=1)
-    pdf.ln(5)
-    
-    # Threat Score Section
-    pdf.set_font("Helvetica", style="B", size=12)
-    pdf.cell(0, 8, txt="2. TRIAGE & RISK ASSESSMENT SUMMARY", ln=1)
-    pdf.set_font("Helvetica", size=10)
-    pdf.cell(50, 6, txt=f"Threat Index Score:", border=0)
-    pdf.cell(0, 6, txt=f"{score}%", ln=1)
-    pdf.cell(50, 6, txt=f"Risk Classification:", border=0)
-    pdf.cell(0, 6, txt=sanitize_str(score_label), ln=1)
-    pdf.cell(50, 6, txt=f"Extortion Amounts Detected:", border=0)
-    pdf.cell(0, 6, txt=f"{total_money} BHD / Units", ln=1)
-    pdf.ln(5)
-    
-    # Artifact Extraction Section
-    pdf.set_font("Helvetica", style="B", size=12)
-    pdf.cell(0, 8, txt="3. EXTRACTED FORENSIC ARTIFACTS", ln=1)
-    pdf.set_font("Helvetica", size=10)
-    pdf.cell(0, 6, txt=f"IBAN Accounts ({len(ibans)}): " + sanitize_str(", ".join(ibans) if ibans else "None Identified"), ln=1)
-    pdf.cell(0, 6, txt=f"Phone Numbers ({len(phones)}): " + sanitize_str(", ".join(phones) if phones else "None Identified"), ln=1)
-    pdf.cell(0, 6, txt=f"Email Addresses ({len(emails)}): " + sanitize_str(", ".join(emails) if emails else "None Identified"), ln=1)
-    pdf.cell(0, 6, txt=f"URLs & IP Addresses ({len(urls)}): " + sanitize_str(", ".join(urls) if urls else "None Identified"), ln=1)
-    pdf.ln(5)
-    
-    # OSINT & Social Media Recon
-    pdf.set_font("Helvetica", style="B", size=12)
-    pdf.cell(0, 8, txt="4. SOCIAL MEDIA & OSINT RECONNAISSANCE SUMMARY", ln=1)
-    pdf.set_font("Helvetica", size=10)
+    story.append(Paragraph("2. Risk Assessment & Financial Threat Level", h2_style))
+    story.append(risk_table)
+    story.append(Spacer(1, 10))
+
+    # Extracted Artifacts
+    story.append(Paragraph("3. Extracted Forensic Indicators", h2_style))
+    artifacts_text = f"""
+    • <b>IBAN Accounts ({len(ibans)}):</b> {', '.join(ibans) if ibans else 'None Identified'}<br/>
+    • <b>Phone Numbers ({len(phones)}):</b> {', '.join(phones) if phones else 'None Identified'}<br/>
+    • <b>Email Addresses ({len(emails)}):</b> {', '.join(emails) if emails else 'None Identified'}<br/>
+    • <b>Network/IP Indicators ({len(urls)}):</b> {', '.join(urls) if urls else 'None Identified'}
+    """
+    story.append(Paragraph(artifacts_text, body_style))
+    story.append(Spacer(1, 10))
+
+    # OSINT Table
+    story.append(Paragraph("4. OSINT Social Media Reconnaissance Results", h2_style))
     if recon_data:
+        osint_table_data = [[Paragraph("<b>Platform</b>", body_style), Paragraph("<b>Status</b>", body_style), Paragraph("<b>Profile Endpoint</b>", body_style)]]
         for r in recon_data:
-            platform = sanitize_str(r.get("Platform", ""))
-            url = sanitize_str(r.get("URL", ""))
-            status = sanitize_str(r.get("Status", ""))
-            pdf.cell(0, 6, txt=f"- [{platform}]: {status} -> {url}", ln=1)
+            osint_table_data.append([
+                Paragraph(str(r.get("Platform", "")), body_style),
+                Paragraph(str(r.get("Status", "")), body_style),
+                Paragraph(str(r.get("URL", "")), body_style)
+            ])
+        osint_table = Table(osint_table_data, colWidths=[120, 140, 280])
+        osint_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#edf2f7')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e0')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0,0), (-1,-1), 5),
+        ]))
+        story.append(osint_table)
     else:
-        pdf.cell(0, 6, txt="No social media reconnaissance scan executed during this session.", ln=1)
-        
-    pdf.ln(10)
-    pdf.set_font("Helvetica", style="I", size=9)
-    pdf.cell(0, 6, txt="--- End of Official CFIS Forensic Document ---", align="C")
-    
-    pdf_bytes = pdf.output()
-    if isinstance(pdf_bytes, str): 
-        pdf_bytes = pdf_bytes.encode('latin1')
-    return pdf_bytes
+        story.append(Paragraph("No automated OSINT platform scan was performed during this session.", body_style))
+
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("<b>[ CONFIDENTIAL - FOR OFFICIAL FORENSIC USE ONLY ]</b>", subtitle_style))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 # ==============================================================================
 # BILINGUAL LOCALIZATION LEXICON
@@ -418,7 +466,7 @@ LEXICON = {
         "col_url": "الرابط أو الـ IP المستخرج",
         "col_risk": "تقييم مستوى الخطورة",
         "col_score": "درجة التهديد الرقمي",
-        "col_flags": "مؤشارات الشبهة المرصودة",
+        "col_flags": "مؤشرات الشبهة المرصودة",
         "clear_btn": "🗑️ مسح الملف الحالي",
         "checksum_lbl": "📄 بصمة الدليل الرقمي وضمان النزاهة",
         "trans_header": "🔠 كاشف ومترجم اللغات الجنائية الفوري",
@@ -442,7 +490,7 @@ LEXICON = {
 }
 
 # ==============================================================================
-# STATE INITIALIZATION & RENDER SYSTEM
+# STATE INITIALIZATION & STREAMLIT UI RENDER
 # ==============================================================================
 st.set_page_config(page_title="CFIS - Advanced Forensic Suite", layout="wide")
 apply_custom_theme()
@@ -490,9 +538,7 @@ with main_tabs[0]:
         chat_data = st.session_state['active_chat_content']
 
     if chat_data:
-        # ----------------------------------------------------------------------
-        # TRANSLATION ENGINE
-        # ----------------------------------------------------------------------
+        # Translation UI Box
         st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
         st.markdown(f"### {tx['trans_header']}")
         src_lang = st.selectbox(tx["trans_lbl"], ["auto (كشف تلقائي)", "ja", "en", "ur", "hi", "ar"])
@@ -524,9 +570,7 @@ with main_tabs[0]:
                 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # ----------------------------------------------------------------------
-        # STATISTICAL CARDS & VISUALIZATIONS
-        # ----------------------------------------------------------------------
+        # Hash and Controls
         st.markdown(f"<div class='forensic-card'><h4>{tx['checksum_lbl']}</h4><code>SHA-256: {st.session_state['active_file_hash']}</code></div>", unsafe_allow_html=True)
         
         if st.button(tx["clear_btn"]):
@@ -540,6 +584,7 @@ with main_tabs[0]:
             save_full_case(case_id, investigator, suspect_name, st.session_state['active_file_hash'], chat_data)
             st.success("Saved!")
 
+        # Visual Analytics Cards
         st.markdown(f"## {tx['intel_header']}")
         col_an1, col_an2, col_an3 = st.columns(3)
         
@@ -578,9 +623,7 @@ with main_tabs[0]:
         overall_score, score_label = analyze_chat_threat_score(chat_data, lang)
         st.markdown(f"<div class='forensic-card'>{tx['threat_idx']} {overall_score}% {tx['forensic_triage_res']} {score_label}</div>", unsafe_allow_html=True)
 
-        # ----------------------------------------------------------------------
-        # ARTIFACT EXTRACTION & OSINT RECONNAISSANCE TABS
-        # ----------------------------------------------------------------------
+        # Artifact Extraction and OSINT
         iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
         phone_pattern = r'\+?973\d{8}'
         email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
@@ -669,11 +712,9 @@ with main_tabs[0]:
                 else:
                     st.warning("Please enter or select a valid handle to scan.")
 
-        # ----------------------------------------------------------------------
-        # FULL DYNAMIC PDF GENERATOR DOWNLOAD BUTTON
-        # ----------------------------------------------------------------------
+        # Download Report PDF
         st.markdown("<br>", unsafe_allow_html=True)
-        pdf_bytes = create_forensic_pdf(
+        pdf_bytes = create_reportlab_pdf(
             case_id=case_id,
             officer=investigator,
             suspect=suspect_name,
