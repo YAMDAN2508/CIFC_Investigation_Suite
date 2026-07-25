@@ -9,7 +9,10 @@ from fpdf import FPDF
 import io
 import requests
 from deep_translator import GoogleTranslator
-
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 # ==============================================================================
 # CSS CUSTOM STYLING (THEME & TYPOGRAPHY)
 # ==============================================================================
