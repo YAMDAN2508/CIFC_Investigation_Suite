@@ -655,8 +655,35 @@ with main_tabs[0]:
                 
         with tab2:
             if extracted_phones or extracted_emails:
-                st.write("Phones Captured:", extracted_phones)
-                st.write("Emails Captured:", extracted_emails)
+                col_p, col_e = st.columns(2)
+                
+                with col_p:
+                    st.write("📞 **Captured Phone Numbers**")
+                    if extracted_phones:
+                        phone_data = []
+                        for phone in extracted_phones:
+                            match_info = check_cross_case(phone)
+                            phone_data.append({
+                                tx["col_phone"]: phone,
+                                tx["col_match"]: f"⚠️ Case: {match_info[0]}" if match_info else "Clear / No Match"
+                            })
+                        st.dataframe(pd.DataFrame(phone_data), use_container_width=True)
+                    else:
+                        st.info("No phone numbers found.")
+                        
+                with col_e:
+                    st.write("✉️ **Captured Email Addresses**")
+                    if extracted_emails:
+                        email_data = []
+                        for email in extracted_emails:
+                            match_info = check_cross_case(email)
+                            email_data.append({
+                                tx["col_email"]: email,
+                                tx["col_match"]: f"⚠️ Case: {match_info[0]}" if match_info else "Clear / No Match"
+                            })
+                        st.dataframe(pd.DataFrame(email_data), use_container_width=True)
+                    else:
+                        st.info("No email addresses found.")
             else:
                 st.info("No telephony or email communication signatures detected.")
 
