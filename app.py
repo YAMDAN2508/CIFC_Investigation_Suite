@@ -7,6 +7,7 @@ import hashlib
 from datetime import datetime
 from fpdf import FPDF
 import io
+import requests
 from deep_translator import GoogleTranslator
 
 # ==============================================================================
@@ -164,6 +165,34 @@ def get_all_indicators():
     return df
 
 # ==============================================================================
+# OSINT & SOCIAL MEDIA RECONNAISSANCE ENGINE
+# ==============================================================================
+def check_social_media_account(platform_name, profile_url):
+    """Pings public endpoints to verify profile availability."""
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ForensicSuite/1.0'}
+    try:
+        response = requests.get(profile_url, headers=headers, timeout=4, allow_redirects=True)
+        if response.status_code == 200:
+            return "EXISTS / ACTIVE 🟢", profile_url
+        elif response.status_code == 404:
+            return "NOT FOUND 🔴", profile_url
+        else:
+            return f"UNCERTAIN ({response.status_code}) 🟡", profile_url
+    except requests.RequestException:
+        return "CHECK FAILED / BLOCKED ⚠️", profile_url
+
+def extract_usernames_and_handles(text):
+    """Extracts @handles and prefixes from emails/chat text."""
+    mentions = re.findall(r'@([a-zA-Z0-9_]{3,30})', text)
+    emails = re.findall(r'([a-zA-Z0-9._%+-]+)@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
+    explicit_users = re.findall(r'\b(?:username|user|المستخدم|يوزر|حساب|اليوزر)\s*[:=]?\s*([a-zA-Z0-9._-]+)\b', text, re.IGNORECASE)
+    
+    combined = set(mentions + emails + explicit_users)
+    # Filter out generic email domains if caught accidentally
+    ignored = {'gmail', 'yahoo', 'hotmail', 'outlook', 'icloud', 'com', 'org', 'net'}
+    return [u for u in combined if u.lower() not in ignored and len(u) >= 3]
+
+# ==============================================================================
 # ADVANCED ANALYTICS ENGINES
 # ==============================================================================
 def analyze_chat_threat_score(text, lang_choice):
@@ -241,6 +270,7 @@ LEXICON = {
         "tab_bank": "🏦 Banking Indicators",
         "tab_phone": "📞 Telephony & Comms",
         "tab_url": "🔗 URL & IP Scanner",
+        "tab_social": "📲 Social Media & OSINT Recon",
         "tab_vault": "📁 Case Vault & Archive Manager",
         "pdf_btn": "Generate Official PDF Forensics Report",
         "col_iban": "IBAN Account Number",
@@ -264,7 +294,13 @@ LEXICON = {
         "stored_records_lbl": "🗄️ Currently Stored Central Records:",
         "no_evidence_msg": "⚠️ Please upload a chat file (.txt) first to begin the forensic evaluation.",
         "active_trans_msg": "📊 The forensic analytics matrix is currently operating on the [Approved Translated Text].",
-        "no_participants": "No structured participants extracted."
+        "no_participants": "No structured participants extracted.",
+        "osint_header": "🔎 Target User Handle Detection & Cross-Platform Recon",
+        "osint_btn": "⚡ Run Automated Social Media Footprint Recon",
+        "osint_custom_input": "Or enter a specific suspect handle to investigate:",
+        "col_platform": "Platform / Network",
+        "col_profile": "Profile Link",
+        "col_osint_status": "Recon Status"
     },
     "العربية": {
         "title": "🛡️ المنظومة الذكية لتحليل أدلة المحادثات الرقمية (CFIS)",
@@ -285,6 +321,7 @@ LEXICON = {
         "tab_bank": "🏦 المؤشرات البنكية",
         "tab_phone": "📞 الاتصالات والهواتف",
         "tab_url": "🔗 فحص الروابط والـ IP",
+        "tab_social": "📲 حسابات التواصل والاستخبارات المفتوحة",
         "tab_vault": "📁 إدارة قاعدة البيانات والأرشيف المركزي",
         "pdf_btn": "توليد التقرير الجنائي الرسمي (PDF)",
         "col_iban": "رقم الحساب البنكي (IBAN)",
@@ -308,7 +345,13 @@ LEXICON = {
         "stored_records_lbl": "🗄️ السجلات المركزية المخزنة حالياً:",
         "no_evidence_msg": "⚠️ الرجاء رفع ملف المحادثة (.txt) أولاً للبدء بالفحص والتحليل الجنائي المتقدم.",
         "active_trans_msg": "📊 مصفوفة التحليل تعمل حالياً بناءً على [النص المترجم المعتمد].",
-        "no_participants": "لم يتم استخراج أطراف مهيكلة للمحادثة."
+        "no_participants": "لم يتم استخراج أطراف مهيكلة للمحادثة.",
+        "osint_header": "🔎 رصد المعرفات واستخبارات حسابات التواصل الاجتماعي",
+        "osint_btn": "⚡ تشغيل فحص البصمة الرقمية على المنصات",
+        "osint_custom_input": "أو أدخل معرفاً (Username) محدداً للمشتبه به للبحث عنه:",
+        "col_platform": "منصة التواصل الاجتماعي",
+        "col_profile": "رابط الحساب المرصود",
+        "col_osint_status": "نتيجة التتبع والاستخبار"
     }
 }
 
@@ -360,7 +403,7 @@ with main_tabs[0]:
 
     if chat_data:
         # ----------------------------------------------------------------------
-        # 🔮 كاشف ومترجم لغات الأدلة الجنائية
+        # 🔮 TRANSLATION ENGINE
         # ----------------------------------------------------------------------
         st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
         st.markdown(f"### {tx['trans_header']}")
@@ -394,7 +437,7 @@ with main_tabs[0]:
         st.markdown("</div>", unsafe_allow_html=True)
 
         # ----------------------------------------------------------------------
-        # 📊 لوحات الإحصائيات الجنائية والتحليلات البيانية
+        # 📊 STATISTICAL CARDS & VISUALIZATIONS
         # ----------------------------------------------------------------------
         st.markdown(f"<div class='forensic-card'><h4>{tx['checksum_lbl']}</h4><code>SHA-256: {st.session_state['active_file_hash']}</code></div>", unsafe_allow_html=True)
         
@@ -447,7 +490,7 @@ with main_tabs[0]:
         st.markdown(f"<div class='forensic-card'>{tx['threat_idx']} {overall_score}% {tx['forensic_triage_res']} {score_label}</div>", unsafe_allow_html=True)
 
         # ----------------------------------------------------------------------
-        # 🕵️‍♂️ استخراج الأدلة الرقمية ومطابقة الاستخبارات
+        # 🕵️‍♂️ ARTIFACT EXTRACTION & OSINT RECONNAISSANCE TABS
         # ----------------------------------------------------------------------
         iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
         phone_pattern = r'\+?973\d{8}'
@@ -461,9 +504,10 @@ with main_tabs[0]:
         extracted_phones = list(set([p.strip() for p in re.findall(phone_pattern, chat_data) if len(p.strip()) > 7]))
         extracted_network = list(set(re.findall(url_pattern, chat_data) + re.findall(ip_pattern, chat_data)))
         extracted_btc = list(set(re.findall(btc_pattern, chat_data)))
+        extracted_handles = extract_usernames_and_handles(chat_data)
 
         st.markdown(f"## {tx['art_title']}")
-        tab1, tab2, tab3 = st.tabs([tx["tab_bank"], tx["tab_phone"], tx["tab_url"]])
+        tab1, tab2, tab3, tab4 = st.tabs([tx["tab_bank"], tx["tab_phone"], tx["tab_url"], tx["tab_social"]])
         
         with tab1:
             if extracted_ibans or extracted_btc:
@@ -493,6 +537,45 @@ with main_tabs[0]:
                 st.dataframe(pd.DataFrame(net_records), use_container_width=True)
             else:
                 st.info("No network infrastructure indicators detected.")
+
+        with tab4:
+            st.markdown(f"### {tx['osint_header']}")
+            st.write(f"**Detected User Handles in Evidence:** `{extracted_handles if extracted_handles else 'None'}`")
+            
+            selected_handle = st.text_input(tx["osint_custom_input"], value=extracted_handles[0] if extracted_handles else "scammer99")
+            
+            if st.button(tx["osint_btn"]):
+                if selected_handle:
+                    with st.spinner(f"Performing cross-platform OSINT scan for handle '{selected_handle}'..."):
+                        platforms_to_check = {
+                            "GitHub": f"https://github.com/{selected_handle}",
+                            "Telegram": f"https://t.me/{selected_handle}",
+                            "Reddit": f"https://www.reddit.com/user/{selected_handle}",
+                            "X (Twitter)": f"https://x.com/{selected_handle}",
+                            "TikTok": f"https://www.tiktok.com/@{selected_handle}",
+                            "Instagram": f"https://www.instagram.com/{selected_handle}/"
+                        }
+                        
+                        recon_results = []
+                        for plat, url in platforms_to_check.items():
+                            status, target_url = check_social_media_account(plat, url)
+                            recon_results.append({
+                                tx["col_platform"]: plat,
+                                tx["col_profile"]: target_url,
+                                tx["col_osint_status"]: status
+                            })
+                        
+                        st.dataframe(pd.DataFrame(recon_results), use_container_width=True)
+                        
+                        # Direct OSINT Aggregator Shortcuts
+                        st.markdown("#### 🔗 Deep External OSINT Investigation Links:")
+                        col_link1, col_link2 = st.columns(2)
+                        with col_link1:
+                            st.markdown(f"👉 [Search '{selected_handle}' on WhatsMyName.app](https://whatsmyname.app/)")
+                        with col_link2:
+                            st.markdown(f"👉 [Google Dork Search for '{selected_handle}'](https://www.google.com/search?q=%22{selected_handle}%22)")
+                else:
+                    st.warning("Please enter or select a valid handle to scan.")
 
         if st.button(tx["pdf_btn"]):
             pdf = FPDF()
