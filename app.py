@@ -4,7 +4,8 @@ import plotly.express as px
 import re
 import sqlite3
 import hashlib
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 import io
 import requests
 from deep_translator import GoogleTranslator
@@ -89,6 +90,20 @@ def apply_custom_theme():
                 background-color: #090d13 !important;
                 border-right: 1px solid #30363d;
             }
+            .highlight-box {
+                background-color: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                padding: 15px;
+                max-height: 350px;
+                overflow-y: auto;
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 13px;
+                line-height: 1.6;
+            }
+            .hl-red { background-color: #7d1a1a; color: #ff9999; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
+            .hl-yellow { background-color: #7d601a; color: #ffe066; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
+            .hl-blue { background-color: #1a4d7d; color: #99ccff; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -113,6 +128,8 @@ def init_db():
             case_number TEXT PRIMARY KEY,
             officer_assigned TEXT,
             suspect_name TEXT,
+            app_source TEXT,
+            device_role TEXT,
             file_hash TEXT,
             chat_content TEXT,
             date_saved TEXT
@@ -142,14 +159,14 @@ def check_cross_case(indicator):
     conn.close()
     return result
 
-def save_full_case(case_num, officer, suspect, f_hash, content):
+def save_full_case(case_num, officer, suspect, app_src, dev_role, f_hash, content):
     conn = sqlite3.connect('cfis_local_vault.db')
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            INSERT OR REPLACE INTO cases_archive (case_number, officer_assigned, suspect_name, file_hash, chat_content, date_saved)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (case_num, officer, suspect, f_hash, content, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            INSERT OR REPLACE INTO cases_archive (case_number, officer_assigned, suspect_name, app_source, device_role, file_hash, chat_content, date_saved)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (case_num, officer, suspect, app_src, dev_role, f_hash, content, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
         conn.commit()
         return True
     except sqlite3.Error:
@@ -160,7 +177,7 @@ def save_full_case(case_num, officer, suspect, f_hash, content):
 def load_full_case(case_num):
     conn = sqlite3.connect('cfis_local_vault.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT chat_content, officer_assigned, suspect_name, file_hash FROM cases_archive WHERE case_number = ?", (case_num,))
+    cursor.execute("SELECT chat_content, officer_assigned, suspect_name, file_hash, app_source, device_role FROM cases_archive WHERE case_number = ?", (case_num,))
     result = cursor.fetchone()
     conn.close()
     return result
@@ -170,6 +187,72 @@ def get_all_indicators():
     df = pd.read_sql_query("SELECT * FROM historical_markers ORDER BY id DESC", conn)
     conn.close()
     return df
+
+# ==============================================================================
+# MULTI-FORMAT DATA INGESTION PARSER
+# ==============================================================================
+def parse_uploaded_chat(file_bytes, app_source):
+    """
+    Normalizes chats from WhatsApp (.txt), Telegram (.json), Instagram (.json), 
+    and Facebook Messenger (.json) into a uniform text stream.
+    """
+    if app_source == "WhatsApp (.txt)":
+        return file_bytes.decode("utf-8", errors="ignore")
+    
+    try:
+        json_data = json.loads(file_bytes.decode("utf-8", errors="ignore"))
+        parsed_lines = []
+        
+        # Telegram Export (.json) Parsing
+        if app_source == "Telegram (.json)":
+            messages = json_data.get("messages", [])
+            for msg in messages:
+                if msg.get("type") == "message":
+                    sender = msg.get("from", "Unknown")
+                    date = msg.get("date", "")
+                    text = msg.get("text", "")
+                    if isinstance(text, list):
+                        text = "".join([t["text"] if isinstance(t, dict) else str(t) for t in text])
+                    parsed_lines.append(f"[{date}] {sender}: {text}")
+                    
+        # Instagram or Facebook Messenger Export (.json) Parsing
+        elif app_source in ["Instagram DMs (.json)", "Facebook Messenger (.json)"]:
+            messages = json_data.get("messages", [])
+            for msg in reversed(messages):
+                sender = msg.get("sender_name", "Unknown")
+                ms = msg.get("timestamp_ms", 0)
+                date = datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S') if ms else ""
+                content = msg.get("content", "")
+                parsed_lines.append(f"[{date}] {sender}: {content}")
+                
+        return "\n".join(parsed_lines) if parsed_lines else file_bytes.decode("utf-8", errors="ignore")
+    except Exception:
+        return file_bytes.decode("utf-8", errors="ignore")
+
+# ==============================================================================
+# KEYWORD HIGHLIGHTING & FORENSIC INSPECTOR
+# ==============================================================================
+def generate_keyword_highlight_html(chat_text):
+    red_words = ['تهديد', 'ابتزاز', 'فلوس', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'blackmail', 'hack', 'scam', '脅迫', 'فضايح', 'بفضحك', 'انشر']
+    yellow_words = ['حساب', 'تحويل', 'دينار', 'كاش', 'IBAN', 'BD', 'BHD', 'money', 'transfer', 'wire', 'pay', 'cash', 'مركز', 'بنك']
+    blue_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp', 'مستخدم']
+    
+    lines = chat_text.split('\n')
+    highlighted_lines = []
+    
+    for line in lines:
+        escaped_line = line.replace('<', '&lt;').replace('>', '&gt;')
+        
+        for w in red_words:
+            escaped_line = re.sub(f"(?i)({re.escape(w)})", r'<span class="hl-red">\1</span>', escaped_line)
+        for w in yellow_words:
+            escaped_line = re.sub(f"(?i)({re.escape(w)})", r'<span class="hl-yellow">\1</span>', escaped_line)
+        for w in blue_words:
+            escaped_line = re.sub(f"(?i)({re.escape(w)})", r'<span class="hl-blue">\1</span>', escaped_line)
+            
+        highlighted_lines.append(escaped_line)
+        
+    return "<br/>".join(highlighted_lines)
 
 # ==============================================================================
 # OSINT & SOCIAL MEDIA RECONNAISSANCE ENGINE
@@ -199,14 +282,15 @@ def extract_usernames_and_handles(text):
 # ==============================================================================
 # ADVANCED ANALYTICS ENGINES
 # ==============================================================================
-def analyze_chat_threat_score(text, lang_choice):
+def analyze_chat_threat_score(text, lang_choice, device_role):
     high_risk_words = ['تهديد', 'ابتزاز', 'فلوس', 'حساب', 'تحويل', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'money', 'blackmail', 'hack', 'transfer', 'wire', 'scam', '凍結', '不正', '脅迫', '金']
     med_risk_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp', 'リンク', '口座']
     
     high_hits = sum(1 for w in high_risk_words if w in text.lower())
     med_hits = sum(1 for w in med_risk_words if w in text.lower())
     
-    score = (high_hits * 15) + (med_hits * 7)
+    multiplier = 1.2 if "Suspect" in device_role or "المشتبه" in device_role else 1.0
+    score = int(((high_hits * 15) + (med_hits * 7)) * multiplier)
     score = min(score, 100)
     
     if score >= 60:
@@ -252,48 +336,25 @@ def analyze_url_or_ip(item, lang_choice):
     return ("SAFE" if lang_choice == "English" else "آمن"), score, "-"
 
 # ==============================================================================
-# REPORTLAB PDF GENERATOR FUNCTION
+# REPORTLAB PDF GENERATOR FUNCTION (WITH CHAIN OF CUSTODY)
 # ==============================================================================
-def create_reportlab_pdf(case_id, officer, suspect, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data):
+def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data, audit_logs):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     
     styles = getSampleStyleSheet()
     
     title_style = ParagraphStyle(
-        'DocTitle',
-        parent=styles['Heading1'],
-        fontSize=16,
-        leading=20,
-        alignment=1,
-        textColor=colors.HexColor('#0f2b48')
+        'DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, alignment=1, textColor=colors.HexColor('#0f2b48')
     )
-    
     subtitle_style = ParagraphStyle(
-        'DocSubTitle',
-        parent=styles['Normal'],
-        fontSize=9,
-        leading=12,
-        alignment=1,
-        textColor=colors.HexColor('#4a5568')
+        'DocSubTitle', parent=styles['Normal'], fontSize=9, leading=12, alignment=1, textColor=colors.HexColor('#4a5568')
     )
-    
     h2_style = ParagraphStyle(
-        'SectionHeader',
-        parent=styles['Heading2'],
-        fontSize=12,
-        leading=16,
-        textColor=colors.HexColor('#1a365d'),
-        spaceBefore=12,
-        spaceAfter=6
+        'SectionHeader', parent=styles['Heading2'], fontSize=11, leading=15, textColor=colors.HexColor('#1a365d'), spaceBefore=10, spaceAfter=4
     )
-    
     body_style = ParagraphStyle(
-        'BodyTextCustom',
-        parent=styles['Normal'],
-        fontSize=10,
-        leading=14,
-        textColor=colors.HexColor('#2d3748')
+        'BodyTextCustom', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#2d3748')
     )
 
     story = []
@@ -301,28 +362,29 @@ def create_reportlab_pdf(case_id, officer, suspect, file_hash, score, score_labe
     # Title Banner
     story.append(Paragraph("DIGITAL FORENSICS INVESTIGATION REPORT", title_style))
     story.append(Paragraph("GENERAL DIRECTORATE OF ANTI-CORRUPTION & ECONOMIC & ELECTRONIC SECURITY", subtitle_style))
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 10))
 
     # Metadata Table
     meta_data = [
         [Paragraph("<b>Case Number:</b>", body_style), Paragraph(str(case_id), body_style)],
         [Paragraph("<b>Investigating Officer:</b>", body_style), Paragraph(str(officer), body_style)],
         [Paragraph("<b>Target Suspect / Alias:</b>", body_style), Paragraph(str(suspect), body_style)],
+        [Paragraph("<b>App Source & Device Role:</b>", body_style), Paragraph(f"{app_src} | Role: {dev_role}", body_style)],
         [Paragraph("<b>Evidence Hash (SHA-256):</b>", body_style), Paragraph(str(file_hash), body_style)],
-        [Paragraph("<b>Generated On:</b>", body_style), Paragraph(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), body_style)]
+        [Paragraph("<b>Generated On:</b>", body_style), Paragraph(datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'), body_style)]
     ]
-    meta_table = Table(meta_data, colWidths=[150, 390])
+    meta_table = Table(meta_data, colWidths=[140, 400])
     meta_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f7fafc')),
         ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#e2e8f0')),
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#edf2f7')),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('PADDING', (0,0), (-1,-1), 5),
+        ('PADDING', (0,0), (-1,-1), 4),
     ]))
     
     story.append(Paragraph("1. Case Metadata & Evidence Integrity", h2_style))
     story.append(meta_table)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
     # Risk Table
     risk_data = [
@@ -335,12 +397,12 @@ def create_reportlab_pdf(case_id, officer, suspect, file_hash, score, score_labe
         ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e0')),
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('PADDING', (0,0), (-1,-1), 6),
+        ('PADDING', (0,0), (-1,-1), 5),
     ]))
     
     story.append(Paragraph("2. Risk Assessment & Financial Threat Level", h2_style))
     story.append(risk_table)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
     # Extracted Artifacts
     story.append(Paragraph("3. Extracted Forensic Indicators", h2_style))
@@ -351,7 +413,7 @@ def create_reportlab_pdf(case_id, officer, suspect, file_hash, score, score_labe
     • <b>Network/IP Indicators ({len(urls)}):</b> {', '.join(urls) if urls else 'None Identified'}
     """
     story.append(Paragraph(artifacts_text, body_style))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
     # OSINT Table
     story.append(Paragraph("4. OSINT Social Media Reconnaissance Results", h2_style))
@@ -359,23 +421,48 @@ def create_reportlab_pdf(case_id, officer, suspect, file_hash, score, score_labe
         osint_table_data = [[Paragraph("<b>Platform</b>", body_style), Paragraph("<b>Status</b>", body_style), Paragraph("<b>Profile Endpoint</b>", body_style)]]
         for r in recon_data:
             osint_table_data.append([
-                Paragraph(str(r.get("Platform", "")), body_style),
-                Paragraph(str(r.get("Status", "")), body_style),
-                Paragraph(str(r.get("URL", "")), body_style)
+                Paragraph(str(r.get("Platform / Network", r.get("Platform", ""))), body_style),
+                Paragraph(str(r.get("Recon Status", r.get("Status", ""))), body_style),
+                Paragraph(str(r.get("Profile Link", r.get("URL", ""))), body_style)
             ])
         osint_table = Table(osint_table_data, colWidths=[120, 140, 280])
         osint_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#edf2f7')),
             ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e0')),
             ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
-            ('PADDING', (0,0), (-1,-1), 5),
+            ('PADDING', (0,0), (-1,-1), 4),
         ]))
         story.append(osint_table)
     else:
         story.append(Paragraph("No automated OSINT platform scan was performed during this session.", body_style))
 
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("<b>[ CONFIDENTIAL - FOR OFFICIAL FORENSIC USE ONLY ]</b>", subtitle_style))
+    story.append(Spacer(1, 8))
+
+    # SECTION 5: CHAIN OF CUSTODY AUDIT LOG
+    story.append(Paragraph("5. Digital Chain of Custody & Legal Audit Trail", h2_style))
+    coc_table_data = [[Paragraph("<b>Phase</b>", body_style), Paragraph("<b>Action Performed</b>", body_style), Paragraph("<b>Timestamp (UTC)</b>", body_style), Paragraph("<b>Officer</b>", body_style), Paragraph("<b>Integrity Stamp</b>", body_style)]]
+    
+    for log in audit_logs:
+        coc_table_data.append([
+            Paragraph(str(log.get("phase", "")), body_style),
+            Paragraph(str(log.get("action", "")), body_style),
+            Paragraph(str(log.get("timestamp", "")), body_style),
+            Paragraph(str(log.get("officer", "")), body_style),
+            Paragraph(f"<code>{log.get('hash_stamp', '')[:10]}...</code>", body_style)
+        ])
+        
+    coc_table = Table(coc_table_data, colWidths=[80, 160, 110, 100, 90])
+    coc_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#e2e8f0')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e0')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e0')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(coc_table)
+
+    story.append(Spacer(1, 15))
+    story.append(Paragraph("<b>[ CONFIDENTIAL - OFFICIALLY VERIFIED FORENSIC CHAIN OF CUSTODY ]</b>", subtitle_style))
 
     doc.build(story)
     buffer.seek(0)
@@ -387,12 +474,14 @@ def create_reportlab_pdf(case_id, officer, suspect, file_hash, score, score_labe
 LEXICON = {
     "English": {
         "title": "🛡️ Chat-Forensics Intelligence Suite (CFIS)",
-        "sub": "CID Anti-Electronic Crime Directorate | Advanced Forensic Triage V5",
+        "sub": "CID Anti-Electronic Crime Directorate | Advanced Multi-Platform Forensic Triage V6",
         "sb_header": "📁 Investigative Case Metadata",
         "sb_case": "Official Case Number:",
         "sb_officer": "Investigating Officer Name / Rank:",
         "sb_suspect": "Suspect Identifier / Alias:",
-        "upload_lbl": "Upload Exported Chat Logs (.txt format)",
+        "sb_app_src": "Select Chat App Source:",
+        "sb_dev_role": "Select Device Owner Role:",
+        "upload_lbl": "Upload Exported Chat File (.txt or .json)",
         "save_vault_btn": "💾 Save Case to Central Archive",
         "intel_header": "🧠 Psychological Intelligence & Deep Identity Analysis",
         "card_tone": "🎭 Chat & Crime Tone Analysis",
@@ -423,10 +512,11 @@ LEXICON = {
         "trans_btn": "🔮 Translate & Update Forensic Matrix Now",
         "trans_back": "🔄 Revert to Original Untranslated File",
         "trans_matrix_lbl": "Current Translated Chat Stream:",
+        "kw_inspector_title": "🔍 Keyword & Forensic Indicator Inspector",
         "load_archive_btn": "Load Target Archive",
         "archive_search_lbl": "Recall previous case file by ID:",
         "stored_records_lbl": "🗄️ Currently Stored Central Records:",
-        "no_evidence_msg": "⚠️ Please upload a chat file (.txt) first to begin the forensic evaluation.",
+        "no_evidence_msg": "⚠️ Please upload a chat file (.txt / .json) first to begin the forensic evaluation.",
         "active_trans_msg": "📊 The forensic analytics matrix is currently operating on the [Approved Translated Text].",
         "no_participants": "No structured participants extracted.",
         "osint_header": "🔎 Target User Handle Detection & Cross-Platform Recon",
@@ -438,12 +528,14 @@ LEXICON = {
     },
     "العربية": {
         "title": "🛡️ المنظومة الذكية لتحليل أدلة المحادثات الرقمية (CFIS)",
-        "sub": "إدارة مكافحة الجرائم الإلكترونية | مختبر الأدلة الرقمية الجنائية",
+        "sub": "إدارة مكافحة الجرائم الإلكترونية | مختبر الأدلة الرقمية متعدد المنصات",
         "sb_header": "📁 بيانات ملف القضية الجنائية",
         "sb_case": "رقم القضية الرسمي:",
         "sb_officer": "اسم ورتبة ضابط التحقيق:",
         "sb_suspect": "هوية / اسم الشهرة للمشتبه به:",
-        "upload_lbl": "رفع سجلات المحادثات المصدرة (صيغة .txt)",
+        "sb_app_src": "اختر تطبيق المحادثة المصدر:",
+        "sb_dev_role": "صفة صاحب الجهاز المظبوط:",
+        "upload_lbl": "رفع سجل المحادثات المصدر (.txt أو .json)",
         "save_vault_btn": "💾 حفظ ملف القضية بالأرشيف المركزي",
         "intel_header": "🧠 الاستخبارات النفسية وتحليل الهوية المعمق",
         "card_tone": "🎭 تحليل نبرة المحادثة والجريمة",
@@ -474,10 +566,11 @@ LEXICON = {
         "trans_btn": "🔮 ترجمة وتحديث مصفوفة التحليل الجنائي فوراً",
         "trans_back": "🔄 العودة للملف الأصلي (الغير مترجم)",
         "trans_matrix_lbl": "نص المحادثة المترجم الحالي:",
+        "kw_inspector_title": "🔍 مستعرض وتظليل الألفاظ والكلمات المفتاحية",
         "load_archive_btn": "تحميل الأرشيف المستهدف",
         "archive_search_lbl": "استدعاء قضية مؤرشفة سابقة برقم الملف:",
         "stored_records_lbl": "🗄️ السجلات المركزية المخزنة حالياً:",
-        "no_evidence_msg": "⚠️ الرجاء رفع ملف المحادثة (.txt) أولاً للبدء بالفحص والتحليل الجنائي المتقدم.",
+        "no_evidence_msg": "⚠️ الرجاء رفع ملف المحادثة (.txt / .json) أولاً للبدء بالفحص والتحليل الجنائي المتقدم.",
         "active_trans_msg": "📊 مصفوفة التحليل تعمل حالياً بناءً على [النص المترجم المعتمد].",
         "no_participants": "لم يتم استخراج أطراف مهيكلة للمحادثة.",
         "osint_header": "🔎 رصد المعرفات واستخبارات حسابات التواصل الاجتماعي",
@@ -503,6 +596,8 @@ if 'translated_chat_content' not in st.session_state:
     st.session_state['translated_chat_content'] = None
 if 'last_osint_results' not in st.session_state:
     st.session_state['last_osint_results'] = []
+if 'audit_trail' not in st.session_state:
+    st.session_state['audit_trail'] = []
 
 lang = st.sidebar.selectbox("🌐 UI Language / لغة الواجهة", ["العربية", "English"])
 tx = LEXICON[lang]
@@ -516,18 +611,47 @@ case_id = st.sidebar.text_input(tx["sb_case"], value="2026/CID/1054")
 investigator = st.sidebar.text_input(tx["sb_officer"], value="Lt. Dana Khalifa")
 suspect_name = st.sidebar.text_input(tx["sb_suspect"], value="Target_Alpha")
 
+app_source = st.sidebar.selectbox(
+    tx["sb_app_src"], 
+    ["WhatsApp (.txt)", "Telegram (.json)", "Instagram DMs (.json)", "Facebook Messenger (.json)"]
+)
+
+device_role = st.sidebar.selectbox(
+    tx["sb_dev_role"], 
+    ["🔴 Suspect / Criminal Device", "🔵 Victim Device"]
+)
+
+# Function to record chain of custody logs
+def add_audit_entry(phase, action, officer, file_hash):
+    entry = {
+        "phase": phase,
+        "action": action,
+        "timestamp": datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+        "officer": officer,
+        "hash_stamp": file_hash
+    }
+    st.session_state['audit_trail'].append(entry)
+
 main_tabs = st.tabs(["🔍 Evidence Analyzer", "📁 " + tx["tab_vault"]])
 
 with main_tabs[0]:
-    uploaded_file = st.file_uploader(tx["upload_lbl"], type=["txt"])
+    uploaded_file = st.file_uploader(tx["upload_lbl"], type=["txt", "json"])
     
     if uploaded_file is not None:
         try:
             file_bytes = uploaded_file.read()
             if len(file_bytes) > 0:
-                st.session_state['active_chat_content'] = file_bytes.decode("utf-8")
-                st.session_state['active_file_hash'] = hashlib.sha256(file_bytes).hexdigest()
-                st.session_state['translated_chat_content'] = None
+                new_hash = hashlib.sha256(file_bytes).hexdigest()
+                if st.session_state['active_file_hash'] != new_hash:
+                    parsed_text = parse_uploaded_chat(file_bytes, app_source)
+                    st.session_state['active_chat_content'] = parsed_text
+                    st.session_state['active_file_hash'] = new_hash
+                    st.session_state['translated_chat_content'] = None
+                    st.session_state['audit_trail'] = [] # Reset audit trail for new file
+                    
+                    # Log Ingestion Stage
+                    add_audit_entry("1. Ingestion", f"Evidence imported ({app_source}) & SHA-256 calculated", investigator, new_hash)
+                    add_audit_entry("2. Analysis", f"Parsed multi-format stream ({device_role})", investigator, new_hash)
         except Exception as e:
             st.error(f"Error reading forensic stream: {e}")
 
@@ -557,6 +681,7 @@ with main_tabs[0]:
                             translated_chunks.append(translated_text)
                     
                     st.session_state['translated_chat_content'] = "".join(translated_chunks)
+                    add_audit_entry("3. Translation", f"Translated evidence via Deep Engine to {target_lang_code}", investigator, st.session_state['active_file_hash'])
                     st.success("Success!")
                     st.rerun()
                 except Exception as e:
@@ -570,19 +695,32 @@ with main_tabs[0]:
                 
         st.markdown("</div>", unsafe_allow_html=True)
 
+        # Keyword Inspector Component
+        st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+        st.markdown(f"### {tx['kw_inspector_title']}")
+        st.markdown("Legend: <span class='hl-red'>Threat / Blackmail</span> | <span class='hl-yellow'>Financial / IBAN</span> | <span class='hl-blue'>Credentials / URLs</span>", unsafe_allow_html=True)
+        st.markdown("<br/>", unsafe_allow_html=True)
+        highlighted_html = generate_keyword_highlight_html(chat_data)
+        st.markdown(f"<div class='highlight-box'>{highlighted_html}</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
         # Hash and Controls
         st.markdown(f"<div class='forensic-card'><h4>{tx['checksum_lbl']}</h4><code>SHA-256: {st.session_state['active_file_hash']}</code></div>", unsafe_allow_html=True)
         
-        if st.button(tx["clear_btn"]):
-            st.session_state['active_chat_content'] = None
-            st.session_state['translated_chat_content'] = None
-            st.session_state['active_file_hash'] = "NO_EVIDENCE_STREAM"
-            st.session_state['last_osint_results'] = []
-            st.rerun()
-
-        if st.button(tx["save_vault_btn"]):
-            save_full_case(case_id, investigator, suspect_name, st.session_state['active_file_hash'], chat_data)
-            st.success("Saved!")
+        col_ctl1, col_ctl2 = st.columns(2)
+        with col_ctl1:
+            if st.button(tx["clear_btn"]):
+                st.session_state['active_chat_content'] = None
+                st.session_state['translated_chat_content'] = None
+                st.session_state['active_file_hash'] = "NO_EVIDENCE_STREAM"
+                st.session_state['last_osint_results'] = []
+                st.session_state['audit_trail'] = []
+                st.rerun()
+        with col_ctl2:
+            if st.button(tx["save_vault_btn"]):
+                save_full_case(case_id, investigator, suspect_name, app_source, device_role, st.session_state['active_file_hash'], chat_data)
+                add_audit_entry("4. Archival", "Case saved to SQLite Local Vault", investigator, st.session_state['active_file_hash'])
+                st.success("Saved to Vault!")
 
         # Visual Analytics Cards
         st.markdown(f"## {tx['intel_header']}")
@@ -620,7 +758,7 @@ with main_tabs[0]:
                 st.info(tx["no_participants"])
             st.markdown("</div>", unsafe_allow_html=True)
 
-        overall_score, score_label = analyze_chat_threat_score(chat_data, lang)
+        overall_score, score_label = analyze_chat_threat_score(chat_data, lang, device_role)
         st.markdown(f"<div class='forensic-card'>{tx['threat_idx']} {overall_score}% {tx['forensic_triage_res']} {score_label}</div>", unsafe_allow_html=True)
 
         # Artifact Extraction and OSINT
@@ -670,9 +808,9 @@ with main_tabs[0]:
                         st.dataframe(pd.DataFrame(phone_data), use_container_width=True)
                     else:
                         st.info("No phone numbers found.")
-                        
+
                 with col_e:
-                    st.write("✉️ **Captured Email Addresses**")
+                    st.write("📧 **Captured Email Addresses**")
                     if extracted_emails:
                         email_data = []
                         for email in extracted_emails:
@@ -685,98 +823,104 @@ with main_tabs[0]:
                     else:
                         st.info("No email addresses found.")
             else:
-                st.info("No telephony or email communication signatures detected.")
+                st.info("No communications metadata found.")
 
         with tab3:
             if extracted_network:
-                net_records = []
+                url_data = []
                 for item in extracted_network:
-                    risk_label, risk_score, reason = analyze_url_or_ip(item, lang)
-                    net_records.append({tx["col_url"]: item, tx["col_risk"]: risk_label, tx["col_score"]: risk_score, tx["col_flags"]: reason})
-                st.dataframe(pd.DataFrame(net_records), use_container_width=True)
+                    risk_lvl, threat_score, flags = analyze_url_or_ip(item, lang)
+                    url_data.append({
+                        tx["col_url"]: item,
+                        tx["col_risk"]: risk_lvl,
+                        tx["col_score"]: f"{threat_score}%",
+                        tx["col_flags"]: flags
+                    })
+                st.dataframe(pd.DataFrame(url_data), use_container_width=True)
             else:
-                st.info("No network infrastructure indicators detected.")
+                st.info("No URLs or IP addresses detected.")
 
         with tab4:
             st.markdown(f"### {tx['osint_header']}")
-            st.write(f"**Detected User Handles in Evidence:** `{extracted_handles if extracted_handles else 'None'}`")
-            
-            selected_handle = st.text_input(tx["osint_custom_input"], value=extracted_handles[0] if extracted_handles else "scammer99")
+            custom_handle = st.text_input(tx["osint_custom_input"], value="")
             
             if st.button(tx["osint_btn"]):
-                if selected_handle:
-                    with st.spinner(f"Performing cross-platform OSINT scan for handle '{selected_handle}'..."):
-                        platforms_to_check = {
-                            "GitHub": f"https://github.com/{selected_handle}",
-                            "Telegram": f"https://t.me/{selected_handle}",
-                            "Reddit": f"https://www.reddit.com/user/{selected_handle}",
-                            "X (Twitter)": f"https://x.com/{selected_handle}",
-                            "TikTok": f"https://www.tiktok.com/@{selected_handle}",
-                            "Instagram": f"https://www.instagram.com/{selected_handle}/"
-                        }
-                        
-                        recon_results = []
-                        for plat, url in platforms_to_check.items():
-                            status, target_url = check_social_media_account(plat, url)
-                            recon_results.append({
-                                "Platform": plat,
-                                "URL": target_url,
-                                "Status": status,
-                                tx["col_platform"]: plat,
-                                tx["col_profile"]: target_url,
-                                tx["col_osint_status"]: status
-                            })
-                        
-                        st.session_state['last_osint_results'] = recon_results
-                        st.dataframe(pd.DataFrame(recon_results)[[tx["col_platform"], tx["col_profile"], tx["col_osint_status"]]], use_container_width=True)
-                        
-                        st.markdown("#### 🔗 Deep External OSINT Investigation Links:")
-                        col_link1, col_link2 = st.columns(2)
-                        with col_link1:
-                            st.markdown(f"👉 [Search '{selected_handle}' on WhatsMyName.app](https://whatsmyname.app/)")
-                        with col_link2:
-                            st.markdown(f"👉 [Google Dork Search for '{selected_handle}'](https://www.google.com/search?q=%22{selected_handle}%22)")
-                else:
-                    st.warning("Please enter or select a valid handle to scan.")
+                handles_to_scan = set(extracted_handles)
+                if custom_handle.strip():
+                    handles_to_scan.add(custom_handle.strip())
 
-        # Download Report PDF
-        st.markdown("<br>", unsafe_allow_html=True)
+                if handles_to_scan:
+                    results = []
+                    with st.spinner("Executing OSINT scans across public endpoints..."):
+                        platforms = [
+                            ("GitHub", "https://github.com/{}"),
+                            ("Telegram", "https://t.me/{}"),
+                            ("Twitter/X", "https://x.com/{}"),
+                            ("Instagram", "https://instagram.com/{}")
+                        ]
+                        for handle in handles_to_scan:
+                            for name, url_template in platforms:
+                                target_url = url_template.format(handle)
+                                status, endpoint = check_social_media_account(name, target_url)
+                                results.append({
+                                    "Handle": handle,
+                                    tx["col_platform"]: name,
+                                    tx["col_osint_status"]: status,
+                                    tx["col_profile"]: endpoint
+                                })
+                    st.session_state['last_osint_results'] = results
+                    add_audit_entry("OSINT Scan", f"Ran OSINT check for {len(handles_to_scan)} handle(s)", investigator, st.session_state['active_file_hash'])
+                else:
+                    st.warning("No handle or username detected for scanning.")
+
+            if st.session_state['last_osint_results']:
+                st.dataframe(pd.DataFrame(st.session_state['last_osint_results']), use_container_width=True)
+
+        st.markdown("---")
+        
+        # Log PDF Generation event right before building document
+        final_audit_trail = list(st.session_state['audit_trail'])
+        final_audit_trail.append({
+            "phase": "Reporting",
+            "action": "PDF Forensic Report Exported",
+            "timestamp": datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+            "officer": investigator,
+            "hash_stamp": st.session_state['active_file_hash']
+        })
+
         pdf_bytes = create_reportlab_pdf(
-            case_id=case_id,
-            officer=investigator,
-            suspect=suspect_name,
-            file_hash=st.session_state['active_file_hash'],
-            score=overall_score,
-            score_label=score_label,
-            ibans=extracted_ibans,
-            emails=extracted_emails,
-            phones=extracted_phones,
-            urls=extracted_network,
-            total_money=total_money,
-            recon_data=st.session_state['last_osint_results']
+            case_id, investigator, suspect_name, app_source, device_role,
+            st.session_state['active_file_hash'], overall_score, score_label, 
+            extracted_ibans, extracted_emails, extracted_phones, extracted_network, 
+            total_money, st.session_state['last_osint_results'], final_audit_trail
         )
         
         st.download_button(
-            label=f"⬇️ {tx['pdf_btn']}",
+            label=tx["pdf_btn"],
             data=pdf_bytes,
-            file_name=f"CFIS_Forensic_Report_{case_id.replace('/', '_')}.pdf",
-            mime="application/pdf",
-            use_container_width=True
+            file_name=f"Forensic_Report_{case_id.replace('/', '_')}.pdf",
+            mime="application/pdf"
         )
     else:
-        st.info(tx["no_evidence_msg"])
+        st.warning(tx["no_evidence_msg"])
 
 with main_tabs[1]:
-    st.header(tx["tab_vault"])
-    search_case_id = st.text_input(tx["archive_search_lbl"])
+    st.markdown(f"### {tx['tab_vault']}")
+    search_case_id = st.text_input(tx["archive_search_lbl"], value="")
+    
     if st.button(tx["load_archive_btn"]):
-        res = load_full_case(search_case_id)
-        if res:
-            st.session_state['active_chat_content'] = res[0]
-            st.session_state['active_file_hash'] = res[3]
+        archived_case = load_full_case(search_case_id)
+        if archived_case:
+            st.session_state['active_chat_content'] = archived_case[0]
+            st.session_state['active_file_hash'] = archived_case[3]
             st.session_state['translated_chat_content'] = None
-            st.success("Loaded!")
+            st.session_state['audit_trail'] = []
+            add_audit_entry("Vault Load", f"Loaded archived case {search_case_id}", investigator, archived_case[3])
+            st.success(f"Successfully loaded case {search_case_id} into the analyzer matrix.")
             st.rerun()
-            
-    st.markdown(f"### {tx['stored_records_lbl']}")
-    st.dataframe(get_all_indicators(), use_container_width=True)
+        else:
+            st.error("Case ID not found in the central vault archive.")
+
+    st.markdown(f"#### {tx['stored_records_lbl']}")
+    indicators_df = get_all_indicators()
+    st.dataframe(indicators_df, use_container_width=True)
