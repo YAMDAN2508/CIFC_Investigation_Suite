@@ -17,7 +17,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 import streamlit as st
 
 # ==============================================================================
-# COLOR PALETTE
+# COLOR PALETTE & THEME
 # ==============================================================================
 CONTACT_COLORS = [
     {"bg": "#1e3a8a", "border": "#3b82f6", "text": "#93c5fd"},
@@ -347,7 +347,6 @@ def create_reportlab_pdf(
   story.append(Paragraph("GENERAL DIRECTORATE OF ANTI-CORRUPTION & ECONOMIC & ELECTRONIC SECURITY", subtitle_style))
   story.append(Spacer(1, 10))
 
-  # 1. Metadata Table (Includes Suspect & Victim)
   meta_data = [
       [Paragraph("<b>Case Number:</b>", body_style), Paragraph(str(case_id), body_style)],
       [Paragraph("<b>Investigating Officer:</b>", body_style), Paragraph(str(officer), body_style)],
@@ -370,7 +369,6 @@ def create_reportlab_pdf(
   story.append(meta_table)
   story.append(Spacer(1, 8))
 
-  # 2. Risk & Behavioral Matrix
   tone_str = ", ".join([f"{k}: {v}%" for k, v in tone_metrics.items()])
   risk_data = [
       [Paragraph("<b>Threat Index Score</b>", body_style), Paragraph("<b>Risk Classification</b>", body_style), Paragraph("<b>Financial Extortion Demand</b>", body_style)],
@@ -391,7 +389,6 @@ def create_reportlab_pdf(
   story.append(Paragraph(f"<b>Tone Metrics Breakdown:</b> {tone_str}", body_style))
   story.append(Spacer(1, 8))
 
-  # 3. Artifact Extraction
   story.append(Paragraph("3. Extracted Forensic Indicators & Technical Identifiers", h2_style))
   artifacts_text = f"""
     • <b>IBAN Accounts ({len(ibans)}):</b> {', '.join(ibans) if ibans else 'None Identified'}<br/>
@@ -402,7 +399,6 @@ def create_reportlab_pdf(
   story.append(Paragraph(artifacts_text, body_style))
   story.append(Spacer(1, 8))
 
-  # 4. OSINT Social Media Reconnaissance
   story.append(Paragraph("4. OSINT Social Media Reconnaissance Results", h2_style))
   if recon_data:
     osint_table_data = [[
@@ -439,7 +435,6 @@ def create_reportlab_pdf(
 
   story.append(Spacer(1, 8))
 
-  # 5. Chain of Custody & Audit
   story.append(Paragraph("5. Digital Chain of Custody & Action Audit Trail", h2_style))
   coc_table_data = [[
       Paragraph("<b>Phase</b>", body_style),
@@ -483,15 +478,15 @@ LEXICON = {
     "English": {
         "title": "🛡️ Chat-Forensics Intelligence Suite (CFIS)",
         "sub": "CID Anti-Electronic Crime Directorate | Advanced Multi-Platform Forensic Triage V6",
-        "sb_header": "📁 Investigative Case Metadata",
+        "sb_header": "📁 Case Identifiers",
         "sb_case": "Official Case Number:",
         "sb_officer": "Investigating Officer Name / Rank:",
         "sb_suspect": "Suspect Identifier / Alias:",
         "sb_victim": "Victim Identifier / Name:",
-        "sb_app_src": "Select Chat App Source:",
-        "sb_dev_role": "Select Device Owner Role:",
-        "upload_lbl": "Upload Exported Chat File (.txt or .json)",
-        "save_vault_btn": "💾 Save Case to Central Archive",
+        "app_src_lbl": "Select Chat App Source:",
+        "dev_role_lbl": "Select Device Owner Role:",
+        "upload_lbl": "📥 Drag & Drop Exported Chat File Here (.txt or .json)",
+        "save_vault_btn": "💾 Save Case to Central Archive Vault",
         "intel_header": "🧠 Psychological Intelligence & Deep Identity Analysis",
         "card_tone": "🎭 Chat & Crime Tone Analysis",
         "card_financial": "💰 Financial Extortion Matrix",
@@ -503,8 +498,8 @@ LEXICON = {
         "tab_phone": "📞 Telephony & Comms",
         "tab_url": "🔗 URL & IP Scanner",
         "tab_social": "📲 Social Media & OSINT Recon",
-        "tab_vault": "📁 Case Vault & Archive Manager",
-        "pdf_btn": "Generate Official PDF Forensics Report",
+        "tab_vault": "📁 Central Vault Database",
+        "pdf_btn": "📄 Export Official PDF Forensics Report",
         "col_iban": "IBAN Account Number",
         "col_status": "Cross-Case Match Status",
         "col_phone": "Phone Number",
@@ -514,8 +509,8 @@ LEXICON = {
         "col_risk": "Risk Assessment",
         "col_score": "Threat Score",
         "col_flags": "Risk Indicators Found",
-        "clear_btn": "🗑️ Clear Current Evidence",
-        "checksum_lbl": "📄 Evidence Digital Fingerprint & Integrity Check",
+        "clear_btn": "🗑️ Reset & Clear Evidence",
+        "checksum_lbl": "📄 Evidence Digital Fingerprint & Integrity Check (SHA-256)",
         "trans_header": "🔠 Real-time Forensic Language Translator",
         "trans_lbl": "Select original chat file language (Source Language):",
         "trans_btn": "🔮 Translate & Update Forensic Matrix Now",
@@ -524,7 +519,7 @@ LEXICON = {
         "load_archive_btn": "Load Target Archive",
         "archive_search_lbl": "Recall previous case file by ID:",
         "stored_records_lbl": "🗄️ Currently Stored Central Records:",
-        "no_evidence_msg": "⚠️ Please upload a chat file (.txt / .json) first to begin the forensic evaluation.",
+        "no_evidence_msg": "⚠️ Please drag and drop a chat file (.txt / .json) below to begin the forensic evaluation.",
         "active_trans_msg": "📊 The forensic analytics matrix is currently operating on the [Approved Translated Text].",
         "no_participants": "No structured participants extracted.",
         "osint_header": "🔎 Target User Handle Detection & Cross-Platform Recon",
@@ -533,18 +528,19 @@ LEXICON = {
         "col_platform": "Platform / Network",
         "col_profile": "Profile Link",
         "col_osint_status": "Recon Status",
+        "parties_title": "👥 Identified Case Parties",
     },
     "العربية": {
         "title": "🛡️ المنظومة الذكية لتحليل أدلة المحادثات الرقمية (CFIS)",
         "sub": "إدارة مكافحة الجرائم الإلكترونية | مختبر الأدلة الرقمية متعدد المنصات",
-        "sb_header": "📁 بيانات ملف القضية الجنائية",
+        "sb_header": "📁 بيانات القضية الرئيسية",
         "sb_case": "رقم القضية الرسمي:",
         "sb_officer": "اسم ورتبة ضابط التحقيق:",
         "sb_suspect": "هوية / اسم الشهرة للمشتبه به:",
         "sb_victim": "اسم الضحية / المجني عليه:",
-        "sb_app_src": "اختر تطبيق المحادثة المصدر:",
-        "sb_dev_role": "صفة صاحب الجهاز المظبوط:",
-        "upload_lbl": "رفع سجل المحادثات المصدر (.txt أو .json)",
+        "app_src_lbl": "اختر تطبيق المحادثة المصدر:",
+        "dev_role_lbl": "صفة صاحب الجهاز المظبوط:",
+        "upload_lbl": "📥 اسحب وأسقط ملف المحادثات هنا (.txt أو .json)",
         "save_vault_btn": "💾 حفظ ملف القضية بالأرشيف المركزي",
         "intel_header": "🧠 الاستخبارات النفسية وتحليل الهوية المعمق",
         "card_tone": "🎭 تحليل نبرة المحادثة والجريمة",
@@ -557,8 +553,8 @@ LEXICON = {
         "tab_phone": "📞 الاتصالات والهواتف",
         "tab_url": "🔗 فحص الروابط والـ IP",
         "tab_social": "📲 حسابات التواصل والاستخبارات المفتوحة",
-        "tab_vault": "📁 إدارة قاعدة البيانات والأرشيف المركزي",
-        "pdf_btn": "توليد التقرير الجنائي الرسمي (PDF)",
+        "tab_vault": "📁 قاعدة البيانات المركزية",
+        "pdf_btn": "📄 تصدير التقرير الجنائي الرسمي (PDF)",
         "col_iban": "رقم الحساب البنكي (IBAN)",
         "col_status": "حالة المطابقة في القضايا الأخرى",
         "col_phone": "رقم الهاتف المرصود",
@@ -568,8 +564,8 @@ LEXICON = {
         "col_risk": "تقييم مستوى الخطورة",
         "col_score": "درجة التهديد الرقمي",
         "col_flags": "مؤشرات الشبهة المرصودة",
-        "clear_btn": "🗑️ مسح الملف الحالي",
-        "checksum_lbl": "📄 بصمة الدليل الرقمي وضمان النزاهة",
+        "clear_btn": "🗑️ إعادت ضبط ومسح الأدلة",
+        "checksum_lbl": "📄 بصمة الدليل الرقمي وضمان النزاهة (SHA-256)",
         "trans_header": "🔠 كاشف ومترجم اللغات الجنائية الفوري",
         "trans_lbl": "اختر لغة ملف المحادثة الأصلي (Source Language):",
         "trans_btn": "🔮 ترجمة وتحديث مصفوفة التحليل الجنائي فوراً",
@@ -578,7 +574,7 @@ LEXICON = {
         "load_archive_btn": "تحميل الأرشيف المستهدف",
         "archive_search_lbl": "استدعاء قضية مؤرشفة سابقة برقم الملف:",
         "stored_records_lbl": "🗄️ السجلات المركزية المخزنة حالياً:",
-        "no_evidence_msg": "⚠️ الرجاء رفع ملف المحادثة (.txt / .json) أولاً للبدء بالفحص والتحليل الجنائي المتقدم.",
+        "no_evidence_msg": "⚠️ الرجاء سحب وإسقاط ملف المحادثة (.txt / .json) أدناه للبدء بالفحص والتحليل الجنائي المتقدم.",
         "active_trans_msg": "📊 مصفوفة التحليل تعمل حالياً بناءً على [النص المترجم المعتمد].",
         "no_participants": "لم يتم استخراج أطراف مهيكلة للمحادثة.",
         "osint_header": "🔎 رصد المعرفات واستخبارات حسابات التواصل الاجتماعي",
@@ -587,6 +583,7 @@ LEXICON = {
         "col_platform": "منصة التواصل الاجتماعي",
         "col_profile": "رابط الحساب المرصود",
         "col_osint_status": "نتيجة التتبع والاستخبار",
+        "parties_title": "👥 أطراف القضية المعرفة",
     },
 }
 
@@ -619,12 +616,9 @@ def add_audit_entry(phase, action, officer, file_hash):
   st.session_state["audit_trail"].append(entry)
 
 
+# Sidebar Clean Metadata
 lang = st.sidebar.selectbox("🌐 UI Language / لغة الواجهة", ["العربية", "English"])
 tx = LEXICON[lang]
-
-st.title(tx["title"])
-st.subheader(tx["sub"])
-st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
 
 st.sidebar.header(tx["sb_header"])
 case_id = st.sidebar.text_input(tx["sb_case"], value="2026/CID/1054")
@@ -632,15 +626,37 @@ investigator = st.sidebar.text_input(tx["sb_officer"], value="Lt. Dana Khalifa")
 suspect_name = st.sidebar.text_input(tx["sb_suspect"], value="Target_Alpha")
 victim_name = st.sidebar.text_input(tx["sb_victim"], value="Victim_Bravo")
 
-app_source = st.sidebar.selectbox(
-    tx["sb_app_src"],
-    ["WhatsApp (.txt)", "Telegram (.json)", "Instagram DMs (.json)", "Facebook Messenger (.json)"],
-)
-device_role = st.sidebar.selectbox(
-    tx["sb_dev_role"],
-    ["🔴 Suspect / Criminal Device", "🔵 Victim Device"],
-)
-uploaded_file = st.sidebar.file_uploader(tx["upload_lbl"], type=["txt", "json"])
+if st.sidebar.button(tx["clear_btn"]):
+  st.session_state["active_chat_content"] = None
+  st.session_state["active_file_hash"] = "NO_EVIDENCE_STREAM"
+  st.session_state["translated_chat_content"] = None
+  st.session_state["audit_trail"] = []
+  st.rerun()
+
+# Main Title Header
+st.title(tx["title"])
+st.subheader(tx["sub"])
+st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
+
+# Main Body Controls Section (Restored Drag & Drop + Settings)
+st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+col_top1, col_top2, col_top3 = st.columns([2, 1, 1])
+
+with col_top1:
+  uploaded_file = st.file_uploader(tx["upload_lbl"], type=["txt", "json"])
+
+with col_top2:
+  app_source = st.selectbox(
+      tx["app_src_lbl"],
+      ["WhatsApp (.txt)", "Telegram (.json)", "Instagram DMs (.json)", "Facebook Messenger (.json)"],
+  )
+
+with col_top3:
+  device_role = st.selectbox(
+      tx["dev_role_lbl"],
+      ["🔴 Suspect / Criminal Device", "🔵 Victim Device"],
+  )
+st.markdown("</div>", unsafe_allow_html=True)
 
 if uploaded_file is not None:
   file_bytes = uploaded_file.read()
@@ -653,33 +669,6 @@ if uploaded_file is not None:
     st.session_state["translated_chat_content"] = None
     st.session_state["audit_trail"] = []
     add_audit_entry("Ingestion", "Evidence Uploaded & Parsed", investigator, calculated_hash)
-
-if st.sidebar.button(tx["save_vault_btn"]):
-  if st.session_state["active_chat_content"]:
-    success = save_full_case(
-        case_id,
-        investigator,
-        suspect_name,
-        victim_name,
-        app_source,
-        device_role,
-        st.session_state["active_file_hash"],
-        st.session_state["active_chat_content"],
-    )
-    if success:
-      st.sidebar.success("Case saved to local vault archive.")
-      add_audit_entry("Archival", "Case Saved to Vault", investigator, st.session_state["active_file_hash"])
-    else:
-      st.sidebar.error("Error saving case.")
-  else:
-    st.sidebar.warning("No active evidence content to save.")
-
-if st.sidebar.button(tx["clear_btn"]):
-  st.session_state["active_chat_content"] = None
-  st.session_state["active_file_hash"] = "NO_EVIDENCE_STREAM"
-  st.session_state["translated_chat_content"] = None
-  st.session_state["audit_trail"] = []
-  st.rerun()
 
 working_text = (
     st.session_state["translated_chat_content"]
@@ -697,6 +686,19 @@ if working_text:
   tone_metrics = analyze_sentiment_and_tone(working_text)
   extracted_amounts, total_money = extract_financial_amounts(working_text)
 
+  # Identified Parties Bar
+  st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+  st.markdown(f"#### {tx['parties_title']}")
+  cp1, cp2, cp3 = st.columns(3)
+  with cp1:
+    st.markdown(f"🎯 **Suspect:** `{suspect_name}`")
+  with cp2:
+    st.markdown(f"🛡️ **Victim:** `{victim_name}`")
+  with cp3:
+    st.markdown(f"📋 **Case Ref:** `{case_id}`")
+  st.markdown("</div>", unsafe_allow_html=True)
+
+  # Intelligence Cards Matrix
   st.markdown("### " + tx["intel_header"])
   col_a, col_b, col_c = st.columns(3)
 
@@ -875,10 +877,29 @@ if working_text:
       st.session_state["translated_chat_content"] = None
       st.rerun()
 
-  # PDF Report Generation Button
+  # Action Bar (Restored Vault Saving and PDF Generation to Main Dashboard Area)
   st.markdown("---")
-  if st.button(tx["pdf_btn"]):
-    add_audit_entry("Reporting", "Official PDF Report Exported", investigator, st.session_state["active_file_hash"])
+  act_col1, act_col2 = st.columns(2)
+
+  with act_col1:
+    if st.button(tx["save_vault_btn"], use_container_width=True):
+      success = save_full_case(
+          case_id,
+          investigator,
+          suspect_name,
+          victim_name,
+          app_source,
+          device_role,
+          st.session_state["active_file_hash"],
+          st.session_state["active_chat_content"],
+      )
+      if success:
+        st.success("Case saved to local vault archive.")
+        add_audit_entry("Archival", "Case Saved to Vault", investigator, st.session_state["active_file_hash"])
+      else:
+        st.error("Error saving case.")
+
+  with act_col2:
     pdf_bytes = create_reportlab_pdf(
         case_id=case_id,
         officer=investigator,
@@ -900,10 +921,11 @@ if working_text:
         audit_logs=st.session_state["audit_trail"],
     )
     st.download_button(
-        label="💾 Download Complete Forensic PDF Report",
+        label=tx["pdf_btn"],
         data=pdf_bytes,
         file_name=f"Forensic_Report_{case_id.replace('/', '_')}.pdf",
         mime="application/pdf",
+        use_container_width=True,
     )
 
 else:
