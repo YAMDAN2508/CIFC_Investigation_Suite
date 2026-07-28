@@ -288,8 +288,7 @@ def parse_whatsapp_txt(content_str):
     """Parses standard & forensic exported WhatsApp text logs."""
     # Matches patterns like: [12/04/2026, 14:10:05] Name (+123): Message
     pattern = r'\[?(\d{2}/\d{2}/\d{4},\s\d{2}:\d{2}:\d{2})\]?\s([^:]+):\s(.*)'
-    lines = content_str.split('
-')
+    lines = content_str.split(' ')
     parsed_records = []
 
     for line in lines:
