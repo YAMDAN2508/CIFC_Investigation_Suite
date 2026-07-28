@@ -296,7 +296,7 @@ def analyze_url_or_ip(item, lang_choice):
 
 
 # ==============================================================================
-# REPORTLAB PDF GENERATOR (DYNAMIC SUSPECT & VICTIM SUPPORT)
+# REPORTLAB PDF GENERATOR
 # ==============================================================================
 def create_reportlab_pdf(
     case_id,
@@ -347,12 +347,12 @@ def create_reportlab_pdf(
   story.append(Paragraph("GENERAL DIRECTORATE OF ANTI-CORRUPTION & ECONOMIC & ELECTRONIC SECURITY", subtitle_style))
   story.append(Spacer(1, 10))
 
-  # 1. Metadata Table
+  # 1. Metadata Table (Includes Suspect & Victim)
   meta_data = [
       [Paragraph("<b>Case Number:</b>", body_style), Paragraph(str(case_id), body_style)],
       [Paragraph("<b>Investigating Officer:</b>", body_style), Paragraph(str(officer), body_style)],
-      [Paragraph("<b>Target Suspect / Alias:</b>", body_style), Paragraph(str(suspect), body_style)],
-      [Paragraph("<b>Primary Victim Name:</b>", body_style), Paragraph(str(victim), body_style)],
+      [Paragraph("<b>Suspect / Target Alias:</b>", body_style), Paragraph(str(suspect), body_style)],
+      [Paragraph("<b>Victim / Complainant:</b>", body_style), Paragraph(str(victim), body_style)],
       [Paragraph("<b>App Source & Role:</b>", body_style), Paragraph(f"{app_src} | Role: {dev_role}", body_style)],
       [Paragraph("<b>Evidence Hash (SHA-256):</b>", body_style), Paragraph(str(file_hash), body_style)],
       [Paragraph("<b>Generated Timestamp:</b>", body_style), Paragraph(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"), body_style)],
@@ -370,47 +370,7 @@ def create_reportlab_pdf(
   story.append(meta_table)
   story.append(Spacer(1, 8))
 
-  # 2. Identified Case Parties (Suspect / Victims breakdown)
-  story.append(Paragraph("2. Identified Case Parties & Suspect Mapping", h2_style))
-  parties_data = [[
-      Paragraph("<b>Entity Role</b>", body_style),
-      Paragraph("<b>Identified Name / Handle</b>", body_style),
-      Paragraph("<b>Chat Participant Mapping</b>", body_style),
-  ]]
-
-  parties_data.append([
-      Paragraph("<font color='red'><b>SUSPECT</b></font>", body_style),
-      Paragraph(str(suspect), body_style),
-      Paragraph("Primary Target Identifier", body_style),
-  ])
-
-  parties_data.append([
-      Paragraph("<font color='blue'><b>VICTIM</b></font>", body_style),
-      Paragraph(str(victim), body_style),
-      Paragraph("Targeted Entity / Complainant", body_style),
-  ])
-
-  for p in extracted_participants:
-    if p.lower() not in [suspect.lower(), victim.lower()]:
-      parties_data.append([
-          Paragraph("<b>PARTICIPANT / OTHER</b>", body_style),
-          Paragraph(str(p), body_style),
-          Paragraph("Extracted Chat Handle", body_style),
-      ])
-
-  parties_table = Table(parties_data, colWidths=[140, 200, 200])
-  parties_table.setStyle(
-      TableStyle([
-          ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf2f7")),
-          ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#cbd5e0")),
-          ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-          ("PADDING", (0, 0), (-1, -1), 4),
-      ])
-  )
-  story.append(parties_table)
-  story.append(Spacer(1, 8))
-
-  # 3. Risk & Behavioral Matrix
+  # 2. Risk & Behavioral Matrix
   tone_str = ", ".join([f"{k}: {v}%" for k, v in tone_metrics.items()])
   risk_data = [
       [Paragraph("<b>Threat Index Score</b>", body_style), Paragraph("<b>Risk Classification</b>", body_style), Paragraph("<b>Financial Extortion Demand</b>", body_style)],
@@ -426,13 +386,13 @@ def create_reportlab_pdf(
           ("PADDING", (0, 0), (-1, -1), 5),
       ])
   )
-  story.append(Paragraph("3. Risk Assessment & Psychological Analysis", h2_style))
+  story.append(Paragraph("2. Risk Assessment & Psychological Analysis", h2_style))
   story.append(risk_table)
   story.append(Paragraph(f"<b>Tone Metrics Breakdown:</b> {tone_str}", body_style))
   story.append(Spacer(1, 8))
 
-  # 4. Artifact Extraction
-  story.append(Paragraph("4. Extracted Forensic Indicators & Technical Identifiers", h2_style))
+  # 3. Artifact Extraction
+  story.append(Paragraph("3. Extracted Forensic Indicators & Technical Identifiers", h2_style))
   artifacts_text = f"""
     • <b>IBAN Accounts ({len(ibans)}):</b> {', '.join(ibans) if ibans else 'None Identified'}<br/>
     • <b>Phone Numbers ({len(phones)}):</b> {', '.join(phones) if phones else 'None Identified'}<br/>
@@ -442,8 +402,8 @@ def create_reportlab_pdf(
   story.append(Paragraph(artifacts_text, body_style))
   story.append(Spacer(1, 8))
 
-  # 5. OSINT Social Media Reconnaissance
-  story.append(Paragraph("5. OSINT Social Media Reconnaissance Results", h2_style))
+  # 4. OSINT Social Media Reconnaissance
+  story.append(Paragraph("4. OSINT Social Media Reconnaissance Results", h2_style))
   if recon_data:
     osint_table_data = [[
         Paragraph("<b>Target Handle</b>", body_style),
@@ -479,8 +439,8 @@ def create_reportlab_pdf(
 
   story.append(Spacer(1, 8))
 
-  # 6. Chain of Custody & Audit
-  story.append(Paragraph("6. Digital Chain of Custody & Action Audit Trail", h2_style))
+  # 5. Chain of Custody & Audit
+  story.append(Paragraph("5. Digital Chain of Custody & Action Audit Trail", h2_style))
   coc_table_data = [[
       Paragraph("<b>Phase</b>", body_style),
       Paragraph("<b>Action Performed</b>", body_style),
@@ -527,7 +487,7 @@ LEXICON = {
         "sb_case": "Official Case Number:",
         "sb_officer": "Investigating Officer Name / Rank:",
         "sb_suspect": "Suspect Identifier / Alias:",
-        "sb_victim": "Victim Name / Alias:",
+        "sb_victim": "Victim Identifier / Name:",
         "sb_app_src": "Select Chat App Source:",
         "sb_dev_role": "Select Device Owner Role:",
         "upload_lbl": "Upload Exported Chat File (.txt or .json)",
@@ -535,7 +495,7 @@ LEXICON = {
         "intel_header": "🧠 Psychological Intelligence & Deep Identity Analysis",
         "card_tone": "🎭 Chat & Crime Tone Analysis",
         "card_financial": "💰 Financial Extortion Matrix",
-        "card_speaker": "🕸️ Participant Structure & Roles",
+        "card_speaker": "🕸️ Participant Structure & Dominance",
         "threat_idx": "💥 **Overall Threat Index:**",
         "forensic_triage_res": "| **Forensic Triage Result:**",
         "art_title": "🔍 High-Value Artifact Extraction & Threat Intel Matching",
@@ -580,8 +540,8 @@ LEXICON = {
         "sb_header": "📁 بيانات ملف القضية الجنائية",
         "sb_case": "رقم القضية الرسمي:",
         "sb_officer": "اسم ورتبة ضابط التحقيق:",
-        "sb_suspect": "هوية / اسم المشتبه به:",
-        "sb_victim": "اسم ورقم الضحية (المجني عليه):",
+        "sb_suspect": "هوية / اسم الشهرة للمشتبه به:",
+        "sb_victim": "اسم الضحية / المجني عليه:",
         "sb_app_src": "اختر تطبيق المحادثة المصدر:",
         "sb_dev_role": "صفة صاحب الجهاز المظبوط:",
         "upload_lbl": "رفع سجل المحادثات المصدر (.txt أو .json)",
@@ -589,7 +549,7 @@ LEXICON = {
         "intel_header": "🧠 الاستخبارات النفسية وتحليل الهوية المعمق",
         "card_tone": "🎭 تحليل نبرة المحادثة والجريمة",
         "card_financial": "💰 مصفوفة الحصر والابتزاز المالي",
-        "card_speaker": "🕸️ أدوار وأطراف المحادثة المرصودة",
+        "card_speaker": "🕸️ هيكلة أطراف المحادثة والمهيمن",
         "threat_idx": "💥 **مؤشر خطورة المحادثة الكلي:**",
         "forensic_triage_res": "| **النتيجة الجنائية للفرز:**",
         "art_title": "🔍 استخراج الأدلة الرقمية ومطابقة الاستخبارات الجنائية",
@@ -669,8 +629,8 @@ st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
 st.sidebar.header(tx["sb_header"])
 case_id = st.sidebar.text_input(tx["sb_case"], value="2026/CID/1054")
 investigator = st.sidebar.text_input(tx["sb_officer"], value="Lt. Dana Khalifa")
-suspect_name = st.sidebar.text_input(tx["sb_suspect"], value="Target_Alpha (Suspect)")
-victim_name = st.sidebar.text_input(tx["sb_victim"], value="Victim_Beta")
+suspect_name = st.sidebar.text_input(tx["sb_suspect"], value="Target_Alpha")
+victim_name = st.sidebar.text_input(tx["sb_victim"], value="Victim_Bravo")
 
 app_source = st.sidebar.selectbox(
     tx["sb_app_src"],
@@ -774,13 +734,7 @@ if working_text:
     st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
     st.markdown(f"#### {tx['card_speaker']}")
     contacts_map = extract_contacts_map(working_text)
-
-    st.write(f"🔴 **Suspect:** `{suspect_name}`")
-    st.write(f"🔵 **Victim:** `{victim_name}`")
-    st.markdown("---")
-
     if contacts_map:
-      st.write("**Extracted Chat Handles:**")
       for c_name, c_style in contacts_map.items():
         st.markdown(
             f"<span class='contact-badge' style='background-color: {c_style['bg']}; border-color: {c_style['border']}; color: {c_style['text']};'>{c_name}</span>",
