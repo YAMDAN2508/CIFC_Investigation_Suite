@@ -288,43 +288,6 @@ def generate_keyword_highlight_html(chat_text, contact_color_map):
         
     return "<br/>".join(highlighted_lines)
 
-def render_artifact_legend_with_roles(suspect_name, device_role, victim_name="Victim / Complainant"):
-    """Renders the Artifact Legend with Victim and Suspect identities directly beneath it."""
-    is_suspect_device = "Suspect" in device_role or "المشتبه" in device_role
-    device_owner_label = "Suspect Device (المشتبه به)" if is_suspect_device else "Victim Device (الضحية)"
-    
-    st.markdown(f"""
-        <div style="background-color: #161b22; border: 1px solid #30363d; padding: 12px 16px; border-radius: 8px; margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: bold; color: #8b949e; margin-bottom: 6px;">
-                🏷️ Artifact Legend: 
-                <span class="hl-red">Threat / Extortion</span> | 
-                <span class="hl-yellow">Financial / IBAN</span> | 
-                <span class="hl-blue">Credentials / URL</span>
-            </div>
-            <hr style="border-top: 1px solid #30363d; margin: 8px 0;" />
-            <div style="display: flex; gap: 20px; font-size: 13px; font-weight: 600; align-items: center; flex-wrap: wrap;">
-                <div>
-                    🔴 <span style="color: #f85149;">Suspect (المشتبه به):</span> 
-                    <span style="color: #f0f6fc; background-color: #21262d; padding: 2px 8px; border-radius: 4px; border: 1px solid #da3633;">
-                        {suspect_name if suspect_name else "Unassigned / Target Alpha"}
-                    </span>
-                </div>
-                <div>
-                    🔵 <span style="color: #58a6ff;">Victim (الضحية):</span> 
-                    <span style="color: #f0f6fc; background-color: #21262d; padding: 2px 8px; border-radius: 4px; border: 1px solid #1f6feb;">
-                        {victim_name}
-                    </span>
-                </div>
-                <div>
-                    📱 <span style="color: #8b949e;">Device Role:</span> 
-                    <span style="color: #f0f6fc; background-color: #21262d; padding: 2px 8px; border-radius: 4px; border: 1px solid #30363d;">
-                        {device_owner_label}
-                    </span>
-                </div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
 # ==============================================================================
 # OSINT & SOCIAL MEDIA RECONNAISSANCE ENGINE
 # ==============================================================================
@@ -750,12 +713,32 @@ if chat_to_analyze:
     st.subheader(tx["kw_inspector_title"])
     contact_color_map = extract_contacts_map(chat_to_analyze)
     
-    # Render Legend + Suspect and Victim Identification Block
-    render_artifact_legend_with_roles(
-        suspect_name=suspect_name, 
-        device_role=device_role,
-        victim_name=victim_name
-    )
+    # EXACT LEGEND DISPLAY WITH VICTIM & SUSPECT BELOW IT
+    st.markdown(f"""
+        <div style="background-color: #161b22; border: 1px solid #30363d; padding: 12px 16px; border-radius: 8px; margin-bottom: 12px;">
+            <div style="font-size: 13px; font-weight: bold; color: #8b949e; margin-bottom: 6px;">
+                🏷️ Artifact Legend: 
+                <span class="hl-red">Threat / Extortion</span> | 
+                <span class="hl-yellow">Financial / IBAN</span> | 
+                <span class="hl-blue">Credentials / URL</span>
+            </div>
+            <hr style="border-top: 1px solid #30363d; margin: 8px 0;" />
+            <div style="display: flex; gap: 20px; font-size: 13px; font-weight: 600; align-items: center; flex-wrap: wrap;">
+                <div>
+                    🔴 <span style="color: #f85149;">Suspect (المشتبه به):</span> 
+                    <span style="color: #f0f6fc; background-color: #21262d; padding: 2px 8px; border-radius: 4px; border: 1px solid #da3633;">
+                        {suspect_name if suspect_name else "Unassigned / Target Alpha"}
+                    </span>
+                </div>
+                <div>
+                    🔵 <span style="color: #58a6ff;">Victim (الضحية):</span> 
+                    <span style="color: #f0f6fc; background-color: #21262d; padding: 2px 8px; border-radius: 4px; border: 1px solid #1f6feb;">
+                        {victim_name if victim_name else "Unassigned / Victim Beta"}
+                    </span>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
     # Render Color-Coded Chat Output
     highlighted_html = generate_keyword_highlight_html(chat_to_analyze, contact_color_map)
