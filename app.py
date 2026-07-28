@@ -19,8 +19,19 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ==============================================================================
-# CSS CUSTOM STYLING (THEME & TYPOGRAPHY)
+# CSS CUSTOM STYLING & DYNAMIC CONTACT COLOR PALETTE
 # ==============================================================================
+# A list of distinct dark-mode compatible neon colors for contacts
+CONTACT_COLORS = [
+    {"bg": "#1e3a8a", "border": "#3b82f6", "text": "#93c5fd"},  # Neon Blue
+    {"bg": "#701a75", "border": "#d946ef", "text": "#f5d0fe"},  # Neon Purple
+    {"bg": "#064e3b", "border": "#10b981", "text": "#a7f3d0"},  # Neon Green
+    {"bg": "#78350f", "border": "#f59e0b", "text": "#fde68a"},  # Neon Amber
+    {"bg": "#831843", "border": "#ec4899", "text": "#fbcfe8"},  # Neon Pink
+    {"bg": "#134e4a", "border": "#14b8a6", "text": "#99f6e4"},  # Neon Teal
+    {"bg": "#7c2d12", "border": "#ea580c", "text": "#ffedd5"}   # Neon Orange
+]
+
 def apply_custom_theme():
     st.markdown("""
         <style>
@@ -95,11 +106,19 @@ def apply_custom_theme():
                 border: 1px solid #30363d;
                 border-radius: 8px;
                 padding: 15px;
-                max-height: 350px;
+                max-height: 400px;
                 overflow-y: auto;
-                font-family: 'Courier New', Courier, monospace;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 font-size: 13px;
-                line-height: 1.6;
+                line-height: 1.8;
+            }
+            .contact-badge {
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-weight: bold;
+                margin-right: 6px;
+                display: inline-block;
+                border: 1px solid;
             }
             .hl-red { background-color: #7d1a1a; color: #ff9999; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
             .hl-yellow { background-color: #7d601a; color: #ffe066; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
@@ -192,10 +211,6 @@ def get_all_indicators():
 # MULTI-FORMAT DATA INGESTION PARSER
 # ==============================================================================
 def parse_uploaded_chat(file_bytes, app_source):
-    """
-    Normalizes chats from WhatsApp (.txt), Telegram (.json), Instagram (.json), 
-    and Facebook Messenger (.json) into a uniform text stream.
-    """
     if app_source == "WhatsApp (.txt)":
         return file_bytes.decode("utf-8", errors="ignore")
     
@@ -203,7 +218,6 @@ def parse_uploaded_chat(file_bytes, app_source):
         json_data = json.loads(file_bytes.decode("utf-8", errors="ignore"))
         parsed_lines = []
         
-        # Telegram Export (.json) Parsing
         if app_source == "Telegram (.json)":
             messages = json_data.get("messages", [])
             for msg in messages:
@@ -215,7 +229,6 @@ def parse_uploaded_chat(file_bytes, app_source):
                         text = "".join([t["text"] if isinstance(t, dict) else str(t) for t in text])
                     parsed_lines.append(f"[{date}] {sender}: {text}")
                     
-        # Instagram or Facebook Messenger Export (.json) Parsing
         elif app_source in ["Instagram DMs (.json)", "Facebook Messenger (.json)"]:
             messages = json_data.get("messages", [])
             for msg in reversed(messages):
@@ -230,9 +243,30 @@ def parse_uploaded_chat(file_bytes, app_source):
         return file_bytes.decode("utf-8", errors="ignore")
 
 # ==============================================================================
-# KEYWORD HIGHLIGHTING & FORENSIC INSPECTOR
+# MULTI-CONTACT COLOR-CODING ENGINE
 # ==============================================================================
-def generate_keyword_highlight_html(chat_text):
+def extract_contacts_map(chat_text):
+    """
+    Finds all unique contact names or numbers in the chat log 
+    and assigns each one a distinct color scheme.
+    """
+    sender_pattern = r'-\s([^:]+):|\]\s([^:]+):|\[[^\]]+\]\s([^:]+):'
+    senders_raw = re.findall(sender_pattern, chat_text)
+    unique_senders = []
+    
+    for s in senders_raw:
+        sender_name = s[0] if s[0] else (s[1] if s[1] else s[2])
+        if sender_name and sender_name.strip() not in unique_senders:
+            unique_senders.append(sender_name.strip())
+
+    contact_color_map = {}
+    for idx, sender in enumerate(unique_senders):
+        color_scheme = CONTACT_COLORS[idx % len(CONTACT_COLORS)]
+        contact_color_map[sender] = color_scheme
+
+    return contact_color_map
+
+def generate_keyword_highlight_html(chat_text, contact_color_map):
     red_words = ['تهديد', 'ابتزاز', 'فلوس', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'blackmail', 'hack', 'scam', '脅迫', 'فضايح', 'بفضحك', 'انشر']
     yellow_words = ['حساب', 'تحويل', 'دينار', 'كاش', 'IBAN', 'BD', 'BHD', 'money', 'transfer', 'wire', 'pay', 'cash', 'مركز', 'بنك']
     blue_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp', 'مستخدم']
@@ -243,6 +277,13 @@ def generate_keyword_highlight_html(chat_text):
     for line in lines:
         escaped_line = line.replace('<', '&lt;').replace('>', '&gt;')
         
+        # Color-Code Contact / Sender Badges
+        for contact, c_style in contact_color_map.items():
+            if contact in escaped_line:
+                badge_html = f'<span class="contact-badge" style="background-color: {c_style["bg"]}; border-color: {c_style["border"]}; color: {c_style["text"]};">{contact}</span>'
+                escaped_line = escaped_line.replace(contact, badge_html, 1)
+
+        # Highlight Threat, Financial, and Credential Keywords
         for w in red_words:
             escaped_line = re.sub(f"(?i)({re.escape(w)})", r'<span class="hl-red">\1</span>', escaped_line)
         for w in yellow_words:
@@ -341,30 +382,19 @@ def analyze_url_or_ip(item, lang_choice):
 def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data, audit_logs):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
-    
     styles = getSampleStyleSheet()
     
-    title_style = ParagraphStyle(
-        'DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, alignment=1, textColor=colors.HexColor('#0f2b48')
-    )
-    subtitle_style = ParagraphStyle(
-        'DocSubTitle', parent=styles['Normal'], fontSize=9, leading=12, alignment=1, textColor=colors.HexColor('#4a5568')
-    )
-    h2_style = ParagraphStyle(
-        'SectionHeader', parent=styles['Heading2'], fontSize=11, leading=15, textColor=colors.HexColor('#1a365d'), spaceBefore=10, spaceAfter=4
-    )
-    body_style = ParagraphStyle(
-        'BodyTextCustom', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#2d3748')
-    )
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=16, leading=20, alignment=1, textColor=colors.HexColor('#0f2b48'))
+    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=9, leading=12, alignment=1, textColor=colors.HexColor('#4a5568'))
+    h2_style = ParagraphStyle('SectionHeader', parent=styles['Heading2'], fontSize=11, leading=15, textColor=colors.HexColor('#1a365d'), spaceBefore=10, spaceAfter=4)
+    body_style = ParagraphStyle('BodyTextCustom', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#2d3748'))
 
     story = []
 
-    # Title Banner
     story.append(Paragraph("DIGITAL FORENSICS INVESTIGATION REPORT", title_style))
     story.append(Paragraph("GENERAL DIRECTORATE OF ANTI-CORRUPTION & ECONOMIC & ELECTRONIC SECURITY", subtitle_style))
     story.append(Spacer(1, 10))
 
-    # Metadata Table
     meta_data = [
         [Paragraph("<b>Case Number:</b>", body_style), Paragraph(str(case_id), body_style)],
         [Paragraph("<b>Investigating Officer:</b>", body_style), Paragraph(str(officer), body_style)],
@@ -386,7 +416,6 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     story.append(meta_table)
     story.append(Spacer(1, 8))
 
-    # Risk Table
     risk_data = [
         [Paragraph("<b>Threat Index Score</b>", body_style), Paragraph("<b>Risk Classification</b>", body_style), Paragraph("<b>Detected Financial Extortion</b>", body_style)],
         [Paragraph(f"<b>{score}%</b>", body_style), Paragraph(str(score_label), body_style), Paragraph(f"{total_money} BHD / Units", body_style)]
@@ -404,7 +433,6 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     story.append(risk_table)
     story.append(Spacer(1, 8))
 
-    # Extracted Artifacts
     story.append(Paragraph("3. Extracted Forensic Indicators", h2_style))
     artifacts_text = f"""
     • <b>IBAN Accounts ({len(ibans)}):</b> {', '.join(ibans) if ibans else 'None Identified'}<br/>
@@ -415,7 +443,6 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     story.append(Paragraph(artifacts_text, body_style))
     story.append(Spacer(1, 8))
 
-    # OSINT Table
     story.append(Paragraph("4. OSINT Social Media Reconnaissance Results", h2_style))
     if recon_data:
         osint_table_data = [[Paragraph("<b>Platform</b>", body_style), Paragraph("<b>Status</b>", body_style), Paragraph("<b>Profile Endpoint</b>", body_style)]]
@@ -438,7 +465,6 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
 
     story.append(Spacer(1, 8))
 
-    # SECTION 5: CHAIN OF CUSTODY AUDIT LOG
     story.append(Paragraph("5. Digital Chain of Custody & Legal Audit Trail", h2_style))
     coc_table_data = [[Paragraph("<b>Phase</b>", body_style), Paragraph("<b>Action Performed</b>", body_style), Paragraph("<b>Timestamp (UTC)</b>", body_style), Paragraph("<b>Officer</b>", body_style), Paragraph("<b>Integrity Stamp</b>", body_style)]]
     
@@ -512,7 +538,7 @@ LEXICON = {
         "trans_btn": "🔮 Translate & Update Forensic Matrix Now",
         "trans_back": "🔄 Revert to Original Untranslated File",
         "trans_matrix_lbl": "Current Translated Chat Stream:",
-        "kw_inspector_title": "🔍 Keyword & Forensic Indicator Inspector",
+        "kw_inspector_title": "🔍 Multi-Contact Inspector & Color-Coded Map",
         "load_archive_btn": "Load Target Archive",
         "archive_search_lbl": "Recall previous case file by ID:",
         "stored_records_lbl": "🗄️ Currently Stored Central Records:",
@@ -566,7 +592,7 @@ LEXICON = {
         "trans_btn": "🔮 ترجمة وتحديث مصفوفة التحليل الجنائي فوراً",
         "trans_back": "🔄 العودة للملف الأصلي (الغير مترجم)",
         "trans_matrix_lbl": "نص المحادثة المترجم الحالي:",
-        "kw_inspector_title": "🔍 مستعرض وتظليل الألفاظ والكلمات المفتاحية",
+        "kw_inspector_title": "🔍 مستعرض تظليل أطراف المحادثة والكلمات المفتاحية",
         "load_archive_btn": "تحميل الأرشيف المستهدف",
         "archive_search_lbl": "استدعاء قضية مؤرشفة سابقة برقم الملف:",
         "stored_records_lbl": "🗄️ السجلات المركزية المخزنة حالياً:",
@@ -621,7 +647,6 @@ device_role = st.sidebar.selectbox(
     ["🔴 Suspect / Criminal Device", "🔵 Victim Device"]
 )
 
-# Function to record chain of custody logs
 def add_audit_entry(phase, action, officer, file_hash):
     entry = {
         "phase": phase,
@@ -647,9 +672,8 @@ with main_tabs[0]:
                     st.session_state['active_chat_content'] = parsed_text
                     st.session_state['active_file_hash'] = new_hash
                     st.session_state['translated_chat_content'] = None
-                    st.session_state['audit_trail'] = [] # Reset audit trail for new file
+                    st.session_state['audit_trail'] = []
                     
-                    # Log Ingestion Stage
                     add_audit_entry("1. Ingestion", f"Evidence imported ({app_source}) & SHA-256 calculated", investigator, new_hash)
                     add_audit_entry("2. Analysis", f"Parsed multi-format stream ({device_role})", investigator, new_hash)
         except Exception as e:
@@ -662,7 +686,10 @@ with main_tabs[0]:
         chat_data = st.session_state['active_chat_content']
 
     if chat_data:
-        # Translation UI Box
+        # Extract Contact Map for Dynamic Color Badging
+        contact_map = extract_contacts_map(chat_data)
+
+        # Translation Box
         st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
         st.markdown(f"### {tx['trans_header']}")
         src_lang = st.selectbox(tx["trans_lbl"], ["auto (كشف تلقائي)", "ja", "en", "ur", "hi", "ar"])
@@ -695,16 +722,29 @@ with main_tabs[0]:
                 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Keyword Inspector Component
+        # Multi-Contact Color-Coded Inspector Card
         st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
         st.markdown(f"### {tx['kw_inspector_title']}")
-        st.markdown("Legend: <span class='hl-red'>Threat / Blackmail</span> | <span class='hl-yellow'>Financial / IBAN</span> | <span class='hl-blue'>Credentials / URLs</span>", unsafe_allow_html=True)
+        
+        # Render Contact Legend Badges
+        st.write("👤 **Detected Contacts & Victims Legend:**")
+        legend_htmls = []
+        for c_name, c_style in contact_map.items():
+            legend_htmls.append(
+                f'<span class="contact-badge" style="background-color: {c_style["bg"]}; border-color: {c_style["border"]}; color: {c_style["text"]}; padding: 4px 10px; margin-bottom: 6px;">{c_name}</span>'
+            )
+        st.markdown(" ".join(legend_htmls) if legend_htmls else "No structured contact handles detected.", unsafe_allow_html=True)
+        
+        st.markdown("<hr style='border-color: #30363d; margin: 10px 0;'>", unsafe_allow_html=True)
+        st.markdown("🔍 **Artifact Legend:** <span class='hl-red'>Threat / Extortion</span> | <span class='hl-yellow'>Financial / IBAN</span> | <span class='hl-blue'>Credentials / URLs</span>", unsafe_allow_html=True)
         st.markdown("<br/>", unsafe_allow_html=True)
-        highlighted_html = generate_keyword_highlight_html(chat_data)
+        
+        # Render Multi-Color Highlighted Chat Stream
+        highlighted_html = generate_keyword_highlight_html(chat_data, contact_map)
         st.markdown(f"<div class='highlight-box'>{highlighted_html}</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Hash and Controls
+        # Checksum and Controls
         st.markdown(f"<div class='forensic-card'><h4>{tx['checksum_lbl']}</h4><code>SHA-256: {st.session_state['active_file_hash']}</code></div>", unsafe_allow_html=True)
         
         col_ctl1, col_ctl2 = st.columns(2)
@@ -722,7 +762,7 @@ with main_tabs[0]:
                 add_audit_entry("4. Archival", "Case saved to SQLite Local Vault", investigator, st.session_state['active_file_hash'])
                 st.success("Saved to Vault!")
 
-        # Visual Analytics Cards
+        # Visual Analytics
         st.markdown(f"## {tx['intel_header']}")
         col_an1, col_an2, col_an3 = st.columns(3)
         
@@ -746,10 +786,10 @@ with main_tabs[0]:
         with col_an3:
             st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
             st.markdown(f"#### {tx['card_speaker']}")
-            sender_pattern = r'-\s([^:]+):|\]\s([^:]+):|\[[^\]]+\]\s([^:]+):'
-            senders_raw = re.findall(sender_pattern, chat_data)
-            senders = [s[0] if s[0] else (s[1] if s[1] else s[2]) for s in senders_raw if any(s)]
-            if senders:
+            if contact_map:
+                sender_pattern = r'-\s([^:]+):|\]\s([^:]+):|\[[^\]]+\]\s([^:]+):'
+                senders_raw = re.findall(sender_pattern, chat_data)
+                senders = [s[0] if s[0] else (s[1] if s[1] else s[2]) for s in senders_raw if any(s)]
                 df_senders = pd.DataFrame(senders, columns=['Speaker']).value_counts().reset_index(name='Messages')
                 fig_speaker = px.pie(df_senders, names='Speaker', values='Messages', color_discrete_sequence=px.colors.qualitative.Dark24)
                 fig_speaker.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9")
@@ -761,7 +801,7 @@ with main_tabs[0]:
         overall_score, score_label = analyze_chat_threat_score(chat_data, lang, device_role)
         st.markdown(f"<div class='forensic-card'>{tx['threat_idx']} {overall_score}% {tx['forensic_triage_res']} {score_label}</div>", unsafe_allow_html=True)
 
-        # Artifact Extraction and OSINT
+        # Artifact Extraction
         iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
         phone_pattern = r'\+?973\d{8}'
         email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
@@ -878,7 +918,6 @@ with main_tabs[0]:
 
         st.markdown("---")
         
-        # Log PDF Generation event right before building document
         final_audit_trail = list(st.session_state['audit_trail'])
         final_audit_trail.append({
             "phase": "Reporting",
