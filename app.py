@@ -550,8 +550,7 @@ for i in range(1, len(messages)):
     "suspect": suspect,
     "confidence": confidence,
     "details": participants,
-    "evidence": evidence
-
+    "evidence": evidence,
     "reason": {
         "victim": [
             "Expressed fear or asked for help",
