@@ -500,7 +500,7 @@ def identify_victim_suspect(chat_text):
             "بفضحك",
             "بنشر"
         ]):
-        participants[current["sender"]]["suspect"] += 7
+            participants[current["sender"]]["suspect"] += 7
 
     # Fear or pleading
     if any(word in msg for word in [
