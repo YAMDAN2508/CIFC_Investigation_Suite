@@ -371,23 +371,23 @@ def identify_victim_suspect(chat_text):
 
         if sender not in participants:
 
-        participants[sender] = {
-            "victim": 0,
-            "suspect": 0,
-            "messages": 0
-        }
+            participants[sender] = {
+                "victim": 0,
+                "suspect": 0,
+                "messages": 0
+            }
 
-        evidence[sender] = {
-            "threats": 0,
-            "money_requests": 0,
-            "help_requests": 0,
-            "fear": 0
-        }
+            evidence[sender] = {
+                "threats": 0,
+                "money_requests": 0,
+                "help_requests": 0,
+                "fear": 0
+            }
 
         participants[sender]["messages"] += 1
          messages.append({
-        "sender": sender,
-        "message": message
+            "sender": sender,
+            "message": message
          })
 
 
