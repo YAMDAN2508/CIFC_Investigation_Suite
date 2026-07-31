@@ -323,6 +323,152 @@ def extract_usernames_and_handles(text):
 # ==============================================================================
 # ADVANCED ANALYTICS ENGINES
 # ==============================================================================
+# ==============================================================================
+# VICTIM / SUSPECT IDENTIFICATION ENGINE
+# ==============================================================================
+
+def identify_victim_suspect(chat_text):
+    """
+    AI-inspired heuristic that determines which participant is most likely
+    the victim and which is most likely the suspect.
+    """
+
+    sender_pattern = r'-\s([^:]+):|\]\s([^:]+):|\[[^\]]+\]\s([^:]+):'
+
+    conversations = {}
+
+    for line in chat_text.splitlines():
+
+        match = re.search(sender_pattern, line)
+
+        if match:
+            sender = match.group(1) or match.group(2) or match.group(3)
+            sender = sender.strip()
+
+            message = line.split(":",1)[1].lower()
+
+            conversations.setdefault(sender, "")
+            conversations[sender] += " " + message
+
+    if len(conversations) < 2:
+        return {
+            "victim":"Unknown",
+            "suspect":"Unknown",
+            "confidence":0
+        }
+
+    victim_keywords = [
+
+        "please",
+        "help",
+        "don't",
+        "stop",
+        "leave me",
+        "i'm scared",
+        "i am scared",
+        "please stop",
+        "please don't",
+
+        "ارجوك",
+        "تكفى",
+        "ساعد",
+        "خايف",
+        "لا تنشر",
+        "لا",
+        "اتوسل",
+        "سامحني",
+        "رجاء",
+
+        "please..."
+    ]
+
+    suspect_keywords = [
+
+        "pay",
+        "send money",
+        "transfer",
+        "wire",
+        "bank",
+
+        "or else",
+        "i will",
+        "i'll",
+        "hack",
+        "blackmail",
+        "expose",
+        "publish",
+
+        "حول",
+        "ادفع",
+        "فلوس",
+        "ابتزاز",
+        "تهديد",
+        "بفضحك",
+        "بنشر",
+        "انشر",
+        "صورك",
+        "حسابك",
+        "ارسل"
+    ]
+
+    financial_keywords = [
+        "money",
+        "cash",
+        "bd",
+        "bhd",
+        "iban",
+        "$",
+        "دينار",
+        "تحويل"
+    ]
+
+    results = {}
+
+    for person,text in conversations.items():
+
+        victim_score = 0
+        suspect_score = 0
+
+        for word in victim_keywords:
+            victim_score += text.count(word)
+
+        for word in suspect_keywords:
+            suspect_score += text.count(word)
+
+        for word in financial_keywords:
+            suspect_score += text.count(word)
+
+        results[person] = {
+            "victim":victim_score,
+            "suspect":suspect_score
+        }
+
+    victim = max(results, key=lambda x: results[x]["victim"])
+    suspect = max(results, key=lambda x: results[x]["suspect"])
+
+    if victim == suspect:
+
+        second = sorted(
+            results.items(),
+            key=lambda x:x[1]["suspect"],
+            reverse=True
+        )
+
+        if len(second) > 1:
+            suspect = second[1][0]
+
+    confidence = (
+        results[victim]["victim"] +
+        results[suspect]["suspect"]
+    ) * 10
+
+    confidence = min(confidence,100)
+
+    return {
+        "victim":victim,
+        "suspect":suspect,
+        "confidence":confidence
+    }
 def analyze_chat_threat_score(text, lang_choice, device_role):
     high_risk_words = ['تهديد', 'ابتزاز', 'فلوس', 'حساب', 'تحويل', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'money', 'blackmail', 'hack', 'transfer', 'wire', 'scam', '凍結', '不正', '脅迫', '金']
     med_risk_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp', 'リンク', '口座']
@@ -798,9 +944,30 @@ with main_tabs[0]:
                 st.info(tx["no_participants"])
             st.markdown("</div>", unsafe_allow_html=True)
 
+       
+        identity = identify_victim_suspect(chat_data)
         overall_score, score_label = analyze_chat_threat_score(chat_data, lang, device_role)
         st.markdown(f"<div class='forensic-card'>{tx['threat_idx']} {overall_score}% {tx['forensic_triage_res']} {score_label}</div>", unsafe_allow_html=True)
+        st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+        st.markdown("## 👥 Victim / Suspect Identification")
+        colv1,colv2,colv3 = st.columns(3)
+        with colv1:
+             st.metric(
+                 "🟦 Victim",
+                  identity["victim"]
+             )
+        with colv2:
+            st.metric(
+                "🟥 Suspect",
+                 identity["suspect"]
+            )
 
+        with colv3:
+             st.metric(
+                 "🎯 Confidence",
+                  f'{identity["confidence"]}%'
+             )
+        st.markdown("</div>", unsafe_allow_html=True)    
         # Artifact Extraction
         iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
         phone_pattern = r'\+?973\d{8}'
