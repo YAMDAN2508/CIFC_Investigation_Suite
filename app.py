@@ -371,24 +371,40 @@ def identify_victim_suspect(chat_text):
 
         if sender not in participants:
 
-            participants[sender] = {
-                "victim": 0,
-                "suspect": 0,
-                "messages": 0
-            }
+            if sender not in participants:
+                participants[sender] = {
+                    "victim": 0,
+                    "suspect": 0,
+                    "messages": 0
+                }
 
-            evidence[sender] = {
-                "threats": 0,
-                "money_requests": 0,
-                "help_requests": 0,
-                "fear": 0
-            }
+                evidence[sender] = {
+                    "threats": 0,
+                    "money_requests": 0,
+                    "help_requests": 0,
+                    "fear": 0
+                }
 
         participants[sender]["messages"] += 1
-         messages.append({
+    
+        messages.append({
             "sender": sender,
             "message": message
-         })
+        })
+I think we should do something easier now
+
+We've been patching the function piece by piece, and indentation problems are piling up.
+
+Please paste the entire identify_victim_suspect() function (from def identify_victim_suspect(chat_text): down to its return statement).
+
+I'll rewrite the entire function for you with:
+
+✅ Correct indentation
+✅ No syntax errors
+✅ All the victim/suspect features
+✅ Ready to paste directly into your project
+
+That will be much faster than fixing one indentation error at a time.
 
 
         victim_keywords = [
