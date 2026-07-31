@@ -370,20 +370,18 @@ def identify_victim_suspect(chat_text):
             continue
 
         if sender not in participants:
+            participants[sender] = {
+                "victim": 0,
+                "suspect": 0,
+                "messages": 0
+            }
 
-            if sender not in participants:
-                participants[sender] = {
-                    "victim": 0,
-                    "suspect": 0,
-                    "messages": 0
-                }
-
-                evidence[sender] = {
-                    "threats": 0,
-                    "money_requests": 0,
-                    "help_requests": 0,
-                    "fear": 0
-                }
+            evidence[sender] = {
+                "threats": 0,
+                "money_requests": 0,
+                "help_requests": 0,
+                "fear": 0
+            }
 
         participants[sender]["messages"] += 1
     
@@ -460,16 +458,20 @@ def identify_victim_suspect(chat_text):
     if len(participants) < 2:
 
         return {
-            "victim":"Unknown",
-            "suspect":"Unknown",
-            "confidence":0,
-            "details":participants
+            "victim": "Unknown",
+            "suspect": "Unknown",
+            "confidence": 0,
+            "details": participants,
+            "evidence": evidence,
+            "reason": {
+                "victim": [],
+                "suspect": []
+            }
         }
-
 
     # Analyze conversation behaviour
 
-for i in range(1, len(messages)):
+    for i in range(1, len(messages)):
 
     current = messages[i]
     previous = messages[i-1]
@@ -485,8 +487,7 @@ for i in range(1, len(messages)):
         "ادفع", "حول", "فلوس"
     ]):
         participants[current["sender"]]["suspect"] += 5
-        evidence[sender]["money_requests"] += 1
-
+        evidence[current["sender"]]["money_requests"] += 1
     # Threats
     if any(word in msg for word in [
         "or else",
@@ -513,7 +514,7 @@ for i in range(1, len(messages)):
         "لا تنشر"
     ]):
         participants[current["sender"]]["victim"] += 6
-        evidence[sender]["help_requests"] += 1
+        evidence[current["sender"]]["help_requests"] += 1
 
 
     victim = max(
