@@ -323,152 +323,248 @@ def extract_usernames_and_handles(text):
 # ==============================================================================
 # ADVANCED ANALYTICS ENGINES
 # ==============================================================================
+
 # ==============================================================================
-# VICTIM / SUSPECT IDENTIFICATION ENGINE
+# VICTIM / SUSPECT IDENTIFICATION
 # ==============================================================================
 
 def identify_victim_suspect(chat_text):
-    """
-    AI-inspired heuristic that determines which participant is most likely
-    the victim and which is most likely the suspect.
-    """
 
-    sender_pattern = r'-\s([^:]+):|\]\s([^:]+):|\[[^\]]+\]\s([^:]+):'
+    participants = {}
 
-    conversations = {}
+    patterns = [
+        r'^\d{1,2}/\d{1,2}/\d{2,4},.*?-\s([^:]+):\s(.*)$',
+        r'^\[(.*?)\]\s([^:]+):\s(.*)$',
+        r'^([^:]+):\s(.*)$'
+    ]
 
+    messages = []
+    evidence = {}
     for line in chat_text.splitlines():
 
-        match = re.search(sender_pattern, line)
+        line = line.strip()
 
-        if match:
-            sender = match.group(1) or match.group(2) or match.group(3)
-            sender = sender.strip()
+        if not line:
+            continue
 
-            message = line.split(":",1)[1].lower()
+        sender = None
+        message = None
 
-            conversations.setdefault(sender, "")
-            conversations[sender] += " " + message
+        for p in patterns:
 
-    if len(conversations) < 2:
+            m = re.match(p, line)
+
+            if m:
+
+                if len(m.groups()) == 3:
+                    sender = m.group(2).strip()
+                    message = m.group(3).lower()
+
+                else:
+                    sender = m.group(1).strip()
+                    message = m.group(2).lower()
+
+                break
+
+        if sender is None:
+            continue
+
+        if sender not in participants:
+
+        participants[sender] = {
+            "victim": 0,
+            "suspect": 0,
+            "messages": 0
+        }
+
+        evidence[sender] = {
+            "threats": 0,
+            "money_requests": 0,
+            "help_requests": 0,
+            "fear": 0
+        }
+
+        participants[sender]["messages"] += 1
+         messages.append({
+        "sender": sender,
+        "message": message
+         })
+
+
+        victim_keywords = [
+
+            "please",
+            "help",
+            "stop",
+            "don't",
+            "leave me",
+            "sorry",
+            "i'm scared",
+            "afraid",
+            "ارجوك",
+            "تكفى",
+            "ساعد",
+            "رجاء",
+            "لا تنشر",
+            "خايف"
+
+        ]
+
+        suspect_keywords = [
+
+            "pay",
+            "money",
+            "transfer",
+            "wire",
+            "bitcoin",
+            "or else",
+            "i will",
+            "blackmail",
+            "hack",
+            "publish",
+            "expose",
+
+            "ادفع",
+            "حول",
+            "فلوس",
+            "ابتزاز",
+            "تهديد",
+            "بفضحك",
+            "بنشر",
+            "انشر"
+
+        ]
+
+        for word in victim_keywords:
+
+            if word in message:
+                participants[sender]["victim"] += 3
+                evidence[sender]["fear"] += 1
+
+        for word in suspect_keywords:
+
+            if word in message:
+                participants[sender]["suspect"] += 5
+                evidence[sender]["threats"] += 1
+
+        if re.search(r"\b\d+\s?(bd|bhd|\$|دينار)\b", message):
+            participants[sender]["suspect"] += 4
+
+        if "?" in message:
+            participants[sender]["victim"] += 1
+
+        if "!" in message:
+            participants[sender]["suspect"] += 1
+
+    if len(participants) < 2:
+
         return {
             "victim":"Unknown",
             "suspect":"Unknown",
-            "confidence":0
+            "confidence":0,
+            "details":participants
         }
 
-    victim_keywords = [
 
-        "please",
-        "help",
-        "don't",
-        "stop",
-        "leave me",
-        "i'm scared",
-        "i am scared",
-        "please stop",
-        "please don't",
+    # Analyze conversation behaviour
 
-        "ارجوك",
-        "تكفى",
-        "ساعد",
-        "خايف",
-        "لا تنشر",
-        "لا",
-        "اتوسل",
-        "سامحني",
-        "رجاء",
+for i in range(1, len(messages)):
 
-        "please..."
-    ]
+    current = messages[i]
+    previous = messages[i-1]
 
-    suspect_keywords = [
+    if current["sender"] == previous["sender"]:
+        continue
 
-        "pay",
-        "send money",
-        "transfer",
-        "wire",
-        "bank",
+    msg = current["message"]
 
+    # Demands for money
+    if any(word in msg for word in [
+        "pay", "money", "transfer", "send",
+        "ادفع", "حول", "فلوس"
+    ]):
+        participants[current["sender"]]["suspect"] += 5
+        evidence[sender]["money_requests"] += 1
+
+    # Threats
+    if any(word in msg for word in [
         "or else",
         "i will",
-        "i'll",
-        "hack",
         "blackmail",
-        "expose",
         "publish",
-
-        "حول",
-        "ادفع",
-        "فلوس",
+        "hack",
         "ابتزاز",
         "تهديد",
         "بفضحك",
-        "بنشر",
-        "انشر",
-        "صورك",
-        "حسابك",
-        "ارسل"
-    ]
+        "بنشر"
+    ]):
+        participants[current["sender"]]["suspect"] += 7
 
-    financial_keywords = [
-        "money",
-        "cash",
-        "bd",
-        "bhd",
-        "iban",
-        "$",
-        "دينار",
-        "تحويل"
-    ]
+    # Fear or pleading
+    if any(word in msg for word in [
+        "please",
+        "stop",
+        "don't",
+        "help",
+        "ارجوك",
+        "تكفى",
+        "ساعد",
+        "لا تنشر"
+    ]):
+        participants[current["sender"]]["victim"] += 6
+        evidence[sender]["help_requests"] += 1
 
-    results = {}
 
-    for person,text in conversations.items():
+    victim = max(
+        participants,
+        key=lambda x: participants[x]["victim"]
+    )
 
-        victim_score = 0
-        suspect_score = 0
-
-        for word in victim_keywords:
-            victim_score += text.count(word)
-
-        for word in suspect_keywords:
-            suspect_score += text.count(word)
-
-        for word in financial_keywords:
-            suspect_score += text.count(word)
-
-        results[person] = {
-            "victim":victim_score,
-            "suspect":suspect_score
-        }
-
-    victim = max(results, key=lambda x: results[x]["victim"])
-    suspect = max(results, key=lambda x: results[x]["suspect"])
+    suspect = max(
+        participants,
+        key=lambda x: participants[x]["suspect"]
+    )
 
     if victim == suspect:
 
-        second = sorted(
-            results.items(),
+        ordered = sorted(
+            participants.items(),
             key=lambda x:x[1]["suspect"],
             reverse=True
         )
 
-        if len(second) > 1:
-            suspect = second[1][0]
+        if len(ordered) > 1:
+            suspect = ordered[1][0]
 
-    confidence = (
-        results[victim]["victim"] +
-        results[suspect]["suspect"]
-    ) * 10
-
-    confidence = min(confidence,100)
+    confidence = min(
+        (
+            participants[victim]["victim"] +
+            participants[suspect]["suspect"]
+        ) * 8,
+        100
+    )
 
     return {
-        "victim":victim,
-        "suspect":suspect,
-        "confidence":confidence
+    "victim": victim,
+    "suspect": suspect,
+    "confidence": confidence,
+    "details": participants,
+    "evidence": evidence
+
+    "reason": {
+        "victim": [
+            "Expressed fear or asked for help",
+            "Used pleading language",
+            "Received threatening responses"
+        ],
+        "suspect": [
+            "Used coercive language",
+            "Requested payment",
+            "Made threatening statements"
+        ]
     }
+}
+
 def analyze_chat_threat_score(text, lang_choice, device_role):
     high_risk_words = ['تهديد', 'ابتزاز', 'فلوس', 'حساب', 'تحويل', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'money', 'blackmail', 'hack', 'transfer', 'wire', 'scam', '凍結', '不正', '脅迫', '金']
     med_risk_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp', 'リンク', '口座']
@@ -943,31 +1039,128 @@ with main_tabs[0]:
             else:
                 st.info(tx["no_participants"])
             st.markdown("</div>", unsafe_allow_html=True)
-
-       
+        # Analyze victim and suspect
         identity = identify_victim_suspect(chat_data)
         overall_score, score_label = analyze_chat_threat_score(chat_data, lang, device_role)
         st.markdown(f"<div class='forensic-card'>{tx['threat_idx']} {overall_score}% {tx['forensic_triage_res']} {score_label}</div>", unsafe_allow_html=True)
+        
+
+        # ==============================================================================
+        # Victim / Suspect Identification
+        # ==============================================================================
+
         st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
-        st.markdown("## 👥 Victim / Suspect Identification")
-        colv1,colv2,colv3 = st.columns(3)
-        with colv1:
-             st.metric(
-                 "🟦 Victim",
-                  identity["victim"]
-             )
-        with colv2:
+
+        st.markdown("### 👥 Victim / Suspect Identification")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
             st.metric(
-                "🟥 Suspect",
-                 identity["suspect"]
+                "🟢 Victim",
+                identity["victim"]
             )
 
-        with colv3:
-             st.metric(
-                 "🎯 Confidence",
-                  f'{identity["confidence"]}%'
-             )
-        st.markdown("</div>", unsafe_allow_html=True)    
+        with col2:
+            st.metric(
+                "🔴 Suspect",
+                identity["suspect"]
+            )
+
+        with col3:
+            st.metric(
+                "🎯 Confidence",
+                f"{identity['confidence']}%"
+            )
+        # ==========================
+        # Risk Level
+        # ==========================
+
+        if identity["confidence"] >= 80:
+            level = "🔴 HIGH"
+
+        elif identity["confidence"] >= 50:
+            level = "🟡 MEDIUM"
+
+        else:
+            level = "🟢 LOW"
+
+        st.metric("Risk Level", level)    
+
+        st.markdown("#### Analysis Details")
+
+        details_df = pd.DataFrame(identity["details"]).T
+        details_df.columns = [
+            "Victim Score",
+            "Suspect Score",
+            "Messages"
+        ]
+
+        st.dataframe(details_df, use_container_width=True)
+
+        st.markdown("### 🔎 Evidence Summary")
+
+        victim_data = identity["evidence"][identity["victim"]]
+        suspect_data = identity["evidence"][identity["suspect"]]
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.success(f"""
+        ### 🟢 Victim
+
+        **Name:** {identity['victim']}
+
+        Fear Expressions: {victim_data['fear']}
+
+        Help Requests: {victim_data['help_requests']}
+        """)
+
+        with col2:
+            st.error(f"""
+        ### 🔴 Suspect
+
+        **Name:** {identity['suspect']}
+
+        Threats: {suspect_data['threats']}
+
+        Money Requests: {suspect_data['money_requests']}
+        """)
+
+        st.markdown("### 📝 AI Findings")
+
+        st.success(
+                f"**Victim:** {identity['victim']}\n\n"
+                "Reason: Expressed fear, requested help, or attempted to stop the interaction."
+            )
+
+        st.error(
+                f"**Suspect:** {identity['suspect']}\n\n"
+                "Reason: Used threatening or coercive language and/or requested money."
+            )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # ==============================================================================
+        # AI Investigation Summary
+        # ==============================================================================
+
+        st.markdown("## 🧠 AI Investigation Summary")
+
+        st.info(f"""
+        Based on the behavioural analysis of the uploaded conversation, the system identified:
+
+        **🟢 Likely Victim:** {identity['victim']}
+
+        **🔴 Likely Suspect:** {identity['suspect']}
+
+        **🎯 Confidence:** {identity['confidence']}%
+
+        This conclusion was generated by analysing communication patterns, threatening language, financial requests, and indicators of fear or distress.
+
+        ⚠️ **Disclaimer:** This result is an investigative aid and should be verified by a qualified digital forensic investigator.
+        """)
+
+
         # Artifact Extraction
         iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
         phone_pattern = r'\+?973\d{8}'
