@@ -473,33 +473,33 @@ def identify_victim_suspect(chat_text):
 
     for i in range(1, len(messages)):
 
-    current = messages[i]
-    previous = messages[i-1]
-
-    if current["sender"] == previous["sender"]:
-        continue
-
-    msg = current["message"]
-
-    # Demands for money
-    if any(word in msg for word in [
-        "pay", "money", "transfer", "send",
-        "ادفع", "حول", "فلوس"
-    ]):
-        participants[current["sender"]]["suspect"] += 5
-        evidence[current["sender"]]["money_requests"] += 1
-    # Threats
-    if any(word in msg for word in [
-        "or else",
-        "i will",
-        "blackmail",
-        "publish",
-        "hack",
-        "ابتزاز",
-        "تهديد",
-        "بفضحك",
-        "بنشر"
-    ]):
+        current = messages[i]
+        previous = messages[i-1]
+    
+        if current["sender"] == previous["sender"]:
+            continue
+    
+        msg = current["message"]
+    
+        # Demands for money
+        if any(word in msg for word in [
+            "pay", "money", "transfer", "send",
+            "ادفع", "حول", "فلوس"
+        ]):
+            participants[current["sender"]]["suspect"] += 5
+            evidence[current["sender"]]["money_requests"] += 1
+        # Threats
+        if any(word in msg for word in [
+            "or else",
+            "i will",
+            "blackmail",
+            "publish",
+            "hack",
+            "ابتزاز",
+            "تهديد",
+            "بفضحك",
+            "بنشر"
+        ]):
         participants[current["sender"]]["suspect"] += 7
 
     # Fear or pleading
