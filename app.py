@@ -705,27 +705,44 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("5. OSINT Social Media Reconnaissance Results", h2_style))
+    
     if recon_data:
-        osint_table_data = [[Paragraph("<b>Platform</b>", body_style), Paragraph("<b>Status</b>", body_style), Paragraph("<b>Profile Endpoint</b>", body_style)]]
+    
+        osint_table_data = [[
+            Paragraph("<b>Platform</b>", body_style),
+            Paragraph("<b>Status</b>", body_style),
+            Paragraph("<b>Profile Endpoint</b>", body_style)
+        ]]
+    
         for r in recon_data:
             osint_table_data.append([
-                Paragraph(r["Platform"], body_style),
-                Paragraph(r["Status"], body_style),
-                Paragraph(r["URL"], body_style),
+                Paragraph(str(r["Platform"]), body_style),
+                Paragraph(str(r["Status"]), body_style),
+                Paragraph(str(r["URL"]), body_style)
             ])
-        osint_table = Table(osint_table_data, colWidths=[120, 140, 280])
+    
+        osint_table = Table(osint_table_data, colWidths=[120,140,280])
+    
         osint_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#edf2f7')),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e0')),
-            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
-            ('PADDING', (0,0), (-1,-1), 4),
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#edf2f7')),
+            ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+            ('BOX',(0,0),(-1,-1),1,colors.black),
+            ('BACKGROUND',(0,1),(-1,-1),colors.white),
+            ('PADDING',(0,0),(-1,-1),5),
         ]))
+    
         story.append(osint_table)
+    
     else:
-        story.append(Paragraph("No automated OSINT platform scan was performed during this session.", body_style))
-
-    story.append(Spacer(1, 8))
-
+    
+        story.append(
+            Paragraph(
+                "No automated OSINT platform scan was performed during this session.",
+                body_style
+            )
+        )
+    
+    story.append(Spacer(1,8))
     story.append(Paragraph("6. Digital Chain of Custody & Legal Audit Trail", h2_style))
     coc_table_data = [[Paragraph("<b>Phase</b>", body_style), Paragraph("<b>Action Performed</b>", body_style), Paragraph("<b>Timestamp (UTC)</b>", body_style), Paragraph("<b>Officer</b>", body_style), Paragraph("<b>Integrity Stamp</b>", body_style)]]
     
