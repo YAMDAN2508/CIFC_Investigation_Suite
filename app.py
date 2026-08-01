@@ -298,27 +298,52 @@ def generate_keyword_highlight_html(chat_text, contact_color_map):
 # ==============================================================================
 # OSINT & SOCIAL MEDIA RECONNAISSANCE ENGINE
 # ==============================================================================
-def check_social_media_account(platform_name, profile_url):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ForensicSuite/1.0'}
-    try:
-        response = requests.get(profile_url, headers=headers, timeout=4, allow_redirects=True)
-        if response.status_code == 200:
-            return "EXISTS / ACTIVE", profile_url
-        elif response.status_code == 404:
-            return "NOT FOUND", profile_url
-        else:
-            return f"UNCERTAIN ({response.status_code})", profile_url
-    except requests.RequestException:
-        return "CHECK FAILED / BLOCKED", profile_url
 
-def extract_usernames_and_handles(text):
-    mentions = re.findall(r'@([a-zA-Z0-9_]{3,30})', text)
-    emails = re.findall(r'([a-zA-Z0-9._%+-]+)@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
-    explicit_users = re.findall(r'\b(?:username|user|المستخدم|يوزر|حساب|اليوزر)\s*[:=]?\s*([a-zA-Z0-9._-]+)\b', text, re.IGNORECASE)
-    
-    combined = set(mentions + emails + explicit_users)
-    ignored = {'gmail', 'yahoo', 'hotmail', 'outlook', 'icloud', 'com', 'org', 'net'}
-    return [u for u in combined if u.lower() not in ignored and len(u) >= 3]
+    story.append(Paragraph("5. OSINT Social Media Reconnaissance Results", h2_style))
+
+    # التأكد من وجود بيانات صالحة
+    valid_recon_data = [r for r in recon_data if r] if recon_data else []
+
+    if valid_recon_data:
+        osint_table_data = [[
+            Paragraph("<b>Platform</b>", body_style), 
+            Paragraph("<b>Status</b>", body_style), 
+            Paragraph("<b>Profile Endpoint</b>", body_style)
+        ]]
+        
+        for r in valid_recon_data:
+            # قراءة البيانات سواء كانت Dictionary أو Tuple/List
+            if isinstance(r, dict):
+                platform = r.get("Platform / Network") or r.get("Platform") or r.get("platform") or ""
+                status = r.get("Recon Status") or r.get("Status") or r.get("status") or ""
+                url = r.get("Profile Link") or r.get("URL") or r.get("url") or r.get("link") or ""
+            elif isinstance(r, (list, tuple)):
+                platform = str(r[0]) if len(r) > 0 else ""
+                status = str(r[1]) if len(r) > 1 else ""
+                url = str(r[2]) if len(r) > 2 else ""
+            else:
+                platform, status, url = "", "", ""
+
+            osint_table_data.append([
+                Paragraph(str(platform), body_style),
+                Paragraph(str(status), body_style),
+                Paragraph(str(url), body_style)
+            ])
+            
+        osint_table = Table(osint_table_data, colWidths=[120, 140, 280])
+        osint_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#edf2f7')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e0')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0,0), (-1,-1), 4),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(osint_table)
+    else:
+        # نص بديل يظهر في حال عدم وجود حسابات مفحوصة بدلاً من جدول فارغ
+        story.append(Paragraph("No automated OSINT platform scan was performed or no target handles were identified during this session.", body_style))
+
+    story.append(Spacer(1, 8))
 
 # ==============================================================================
 # ADVANCED ANALYTICS ENGINES
@@ -622,6 +647,24 @@ def analyze_url_or_ip(item, lang_choice):
 # ==============================================================================
 # REPORTLAB PDF GENERATOR FUNCTION (WITH CHAIN OF CUSTODY)
 # ==============================================================================
+recon_data = [
+    {
+        "Platform": "Instagram",
+        "Status": "EXISTS / ACTIVE",
+        "URL": "https://instagram.com/target_user"
+    },
+    {
+        "Platform": "Telegram",
+        "Status": "EXISTS / ACTIVE",
+        "URL": "https://t.me/target_user"
+    },
+    {
+        "Platform": "GitHub",
+        "Status": "NOT FOUND",
+        "URL": "N/A"
+    }
+]
+
 def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data, audit_logs, identity):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
