@@ -1326,7 +1326,13 @@ with main_tabs[0]:
             "officer": investigator,
             "hash_stamp": st.session_state['active_file_hash']
         })
+        st.write("OSINT exists:", "last_osint_results" in st.session_state)
 
+        if "last_osint_results" in st.session_state:
+            st.write(st.session_state["last_osint_results"])
+        else:
+            st.error("last_osint_results is missing!")
+        
         pdf_bytes = create_reportlab_pdf(
             case_id,
             investigator,
