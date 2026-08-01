@@ -1352,15 +1352,16 @@ with main_tabs[0]:
             "hash_stamp": st.session_state['active_file_hash']
         })
        
-        st.write("OSINT passed to PDF:")
-        st.json(st.session_state["last_osint_results"])
         st.subheader("Debug OSINT")
 
-        st.write("Session State:")
-        st.write(st.session_state.get("last_osint_results", "Not Found"))
+        osint = st.session_state.get("last_osint_results", [])
         
-        st.write("Length:")
-        st.write(len(st.session_state.get("last_osint_results", [])))
+        st.write("Number of records:", len(osint))
+        
+        if len(osint) > 0:
+            st.dataframe(pd.DataFrame(osint), use_container_width=True)
+        else:
+            st.error("No OSINT records found!")
         pdf_bytes = create_reportlab_pdf(
             case_id,
             investigator,
