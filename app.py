@@ -622,7 +622,7 @@ def analyze_url_or_ip(item, lang_choice):
 # ==============================================================================
 # REPORTLAB PDF GENERATOR FUNCTION (WITH CHAIN OF CUSTODY)
 # ==============================================================================
-def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data, audit_logs):
+def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data, audit_logs, identity):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     styles = getSampleStyleSheet()
@@ -676,7 +676,25 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     story.append(risk_table)
     story.append(Spacer(1, 8))
 
-    story.append(Paragraph("3. Extracted Forensic Indicators", h2_style))
+    story.append(Paragraph("3. Victim / Suspect Identification", h2_style))
+
+    identity_table = Table([
+        ["Victim", identity["victim"]],
+        ["Suspect", identity["suspect"]],
+        ["Confidence", f"{identity['confidence']}%"]
+    ], colWidths=[170, 370])
+
+    identity_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f7fafc')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e0')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+        ('PADDING', (0,0), (-1,-1), 5),
+    ]))
+
+    story.append(identity_table)
+    story.append(Spacer(1,8))
+
+    story.append(Paragraph("4. Extracted Forensic Indicators", h2_style))
     artifacts_text = f"""
     • <b>IBAN Accounts ({len(ibans)}):</b> {', '.join(ibans) if ibans else 'None Identified'}<br/>
     • <b>Phone Numbers ({len(phones)}):</b> {', '.join(phones) if phones else 'None Identified'}<br/>
@@ -686,7 +704,7 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     story.append(Paragraph(artifacts_text, body_style))
     story.append(Spacer(1, 8))
 
-    story.append(Paragraph("4. OSINT Social Media Reconnaissance Results", h2_style))
+    story.append(Paragraph("5. OSINT Social Media Reconnaissance Results", h2_style))
     if recon_data:
         osint_table_data = [[Paragraph("<b>Platform</b>", body_style), Paragraph("<b>Status</b>", body_style), Paragraph("<b>Profile Endpoint</b>", body_style)]]
         for r in recon_data:
@@ -708,7 +726,7 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
 
     story.append(Spacer(1, 8))
 
-    story.append(Paragraph("5. Digital Chain of Custody & Legal Audit Trail", h2_style))
+    story.append(Paragraph("6. Digital Chain of Custody & Legal Audit Trail", h2_style))
     coc_table_data = [[Paragraph("<b>Phase</b>", body_style), Paragraph("<b>Action Performed</b>", body_style), Paragraph("<b>Timestamp (UTC)</b>", body_style), Paragraph("<b>Officer</b>", body_style), Paragraph("<b>Integrity Stamp</b>", body_style)]]
     
     for log in audit_logs:
@@ -730,6 +748,27 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     ]))
     story.append(coc_table)
 
+    story.append(Paragraph("7. AI Investigation Summary", h2_style))
+
+    summary = f"""
+    <b>Likely Victim:</b> {identity['victim']}<br/><br/>
+    
+    <b>Likely Suspect:</b> {identity['suspect']}<br/><br/>
+    
+    <b>Confidence:</b> {identity['confidence']}%<br/><br/>
+    
+    This assessment was generated automatically by analysing
+    conversation behaviour, linguistic indicators,
+    financial requests, and threatening communication patterns.
+    
+    The output should be treated as an investigative aid
+    and verified by a qualified digital forensic investigator.
+    """
+    
+    story.append(Paragraph(summary, body_style))
+    story.append(Spacer(1,10))
+
+    
     story.append(Spacer(1, 15))
     story.append(Paragraph("<b>[ CONFIDENTIAL - OFFICIALLY VERIFIED FORENSIC CHAIN OF CUSTODY ]</b>", subtitle_style))
 
