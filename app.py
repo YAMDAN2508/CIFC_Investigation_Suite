@@ -7,6 +7,8 @@ import hashlib
 import json
 from datetime import datetime, timezone
 import io
+import requests
+from deep_translator import GoogleTranslator
 
 # ==============================================================================
 # REPORTLAB PDF ENGINE IMPORTS
@@ -19,6 +21,7 @@ from reportlab.lib import colors
 # ==============================================================================
 # CSS CUSTOM STYLING & DYNAMIC CONTACT COLOR PALETTE
 # ==============================================================================
+# A list of distinct dark-mode compatible neon colors for contacts
 CONTACT_COLORS = [
     {"bg": "#1e3a8a", "border": "#3b82f6", "text": "#93c5fd"},  # Neon Blue
     {"bg": "#701a75", "border": "#d946ef", "text": "#f5d0fe"},  # Neon Purple
@@ -190,6 +193,20 @@ def save_full_case(case_num, officer, suspect, app_src, dev_role, f_hash, conten
     finally:
         conn.close()
 
+def load_full_case(case_num):
+    conn = sqlite3.connect('cfis_local_vault.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT chat_content, officer_assigned, suspect_name, file_hash, app_source, device_role FROM cases_archive WHERE case_number = ?", (case_num,))
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+def get_all_indicators():
+    conn = sqlite3.connect('cfis_local_vault.db')
+    df = pd.read_sql_query("SELECT * FROM historical_markers ORDER BY id DESC", conn)
+    conn.close()
+    return df
+
 # ==============================================================================
 # MULTI-FORMAT DATA INGESTION PARSER
 # ==============================================================================
@@ -229,6 +246,10 @@ def parse_uploaded_chat(file_bytes, app_source):
 # MULTI-CONTACT COLOR-CODING ENGINE
 # ==============================================================================
 def extract_contacts_map(chat_text):
+    """
+    Finds all unique contact names or numbers in the chat log 
+    and assigns each one a distinct color scheme.
+    """
     sender_pattern = r'-\s([^:]+):|\]\s([^:]+):|\[[^\]]+\]\s([^:]+):'
     senders_raw = re.findall(sender_pattern, chat_text)
     unique_senders = []
@@ -256,11 +277,13 @@ def generate_keyword_highlight_html(chat_text, contact_color_map):
     for line in lines:
         escaped_line = line.replace('<', '&lt;').replace('>', '&gt;')
         
+        # Color-Code Contact / Sender Badges
         for contact, c_style in contact_color_map.items():
             if contact in escaped_line:
                 badge_html = f'<span class="contact-badge" style="background-color: {c_style["bg"]}; border-color: {c_style["border"]}; color: {c_style["text"]};">{contact}</span>'
                 escaped_line = escaped_line.replace(contact, badge_html, 1)
 
+        # Highlight Threat, Financial, and Credential Keywords
         for w in red_words:
             escaped_line = re.sub(f"(?i)({re.escape(w)})", r'<span class="hl-red">\1</span>', escaped_line)
         for w in yellow_words:
@@ -273,10 +296,42 @@ def generate_keyword_highlight_html(chat_text, contact_color_map):
     return "<br/>".join(highlighted_lines)
 
 # ==============================================================================
+# OSINT & SOCIAL MEDIA RECONNAISSANCE ENGINE
+# ==============================================================================
+def check_social_media_account(platform_name, profile_url):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ForensicSuite/1.0'}
+    try:
+        response = requests.get(profile_url, headers=headers, timeout=4, allow_redirects=True)
+        if response.status_code == 200:
+            return "EXISTS / ACTIVE", profile_url
+        elif response.status_code == 404:
+            return "NOT FOUND", profile_url
+        else:
+            return f"UNCERTAIN ({response.status_code})", profile_url
+    except requests.RequestException:
+        return "CHECK FAILED / BLOCKED", profile_url
+
+def extract_usernames_and_handles(text):
+    mentions = re.findall(r'@([a-zA-Z0-9_]{3,30})', text)
+    emails = re.findall(r'([a-zA-Z0-9._%+-]+)@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
+    explicit_users = re.findall(r'\b(?:username|user|المستخدم|يوزر|حساب|اليوزر)\s*[:=]?\s*([a-zA-Z0-9._-]+)\b', text, re.IGNORECASE)
+    
+    combined = set(mentions + emails + explicit_users)
+    ignored = {'gmail', 'yahoo', 'hotmail', 'outlook', 'icloud', 'com', 'org', 'net'}
+    return [u for u in combined if u.lower() not in ignored and len(u) >= 3]
+
+# ==============================================================================
+# ADVANCED ANALYTICS ENGINES
+# ==============================================================================
+
+# ==============================================================================
 # VICTIM / SUSPECT IDENTIFICATION
 # ==============================================================================
+
 def identify_victim_suspect(chat_text):
+
     participants = {}
+
     patterns = [
         r'^\d{1,2}/\d{1,2}/\d{2,4},.*?-\s([^:]+):\s(.*)$',
         r'^\[(.*?)\]\s([^:]+):\s(.*)$',
@@ -286,42 +341,107 @@ def identify_victim_suspect(chat_text):
     messages = []
     evidence = {}
     for line in chat_text.splitlines():
+
         line = line.strip()
+
         if not line:
             continue
 
         sender = None
         message = None
+
         for p in patterns:
+
             m = re.match(p, line)
+
             if m:
+
                 if len(m.groups()) == 3:
                     sender = m.group(2).strip()
                     message = m.group(3).lower()
+
                 else:
                     sender = m.group(1).strip()
                     message = m.group(2).lower()
+
                 break
 
         if sender is None:
             continue
 
         if sender not in participants:
-            participants[sender] = {"victim": 0, "suspect": 0, "messages": 0}
-            evidence[sender] = {"threats": 0, "money_requests": 0, "help_requests": 0, "fear": 0}
+            participants[sender] = {
+                "victim": 0,
+                "suspect": 0,
+                "messages": 0
+            }
+
+            evidence[sender] = {
+                "threats": 0,
+                "money_requests": 0,
+                "help_requests": 0,
+                "fear": 0
+            }
 
         participants[sender]["messages"] += 1
-        messages.append({"sender": sender, "message": message})
+    
+        messages.append({
+            "sender": sender,
+            "message": message
+        })
 
-        victim_keywords = ["please", "help", "stop", "don't", "leave me", "sorry", "i'm scared", "afraid", "ارجوك", "تكفى", "ساعد", "رجاء", "لا تنشر", "خايف"]
-        suspect_keywords = ["pay", "money", "transfer", "wire", "bitcoin", "or else", "i will", "blackmail", "hack", "publish", "expose", "ادفع", "حول", "فلوس", "ابتزاز", "تهديد", "بفضحك", "بنشر", "انشر"]
+        victim_keywords = [
+
+            "please",
+            "help",
+            "stop",
+            "don't",
+            "leave me",
+            "sorry",
+            "i'm scared",
+            "afraid",
+            "ارجوك",
+            "تكفى",
+            "ساعد",
+            "رجاء",
+            "لا تنشر",
+            "خايف"
+
+        ]
+
+        suspect_keywords = [
+
+            "pay",
+            "money",
+            "transfer",
+            "wire",
+            "bitcoin",
+            "or else",
+            "i will",
+            "blackmail",
+            "hack",
+            "publish",
+            "expose",
+
+            "ادفع",
+            "حول",
+            "فلوس",
+            "ابتزاز",
+            "تهديد",
+            "بفضحك",
+            "بنشر",
+            "انشر"
+
+        ]
 
         for word in victim_keywords:
+
             if word in message:
                 participants[sender]["victim"] += 3
                 evidence[sender]["fear"] += 1
 
         for word in suspect_keywords:
+
             if word in message:
                 participants[sender]["suspect"] += 5
                 evidence[sender]["threats"] += 1
@@ -329,36 +449,126 @@ def identify_victim_suspect(chat_text):
         if re.search(r"\b\d+\s?(bd|bhd|\$|دينار)\b", message):
             participants[sender]["suspect"] += 4
 
+        if "?" in message:
+            participants[sender]["victim"] += 1
+
+        if "!" in message:
+            participants[sender]["suspect"] += 1
+
     if len(participants) < 2:
+
         return {
             "victim": "Unknown",
             "suspect": "Unknown",
             "confidence": 0,
             "details": participants,
-            "evidence": evidence
+            "evidence": evidence,
+            "reason": {
+                "victim": [],
+                "suspect": []
+            }
         }
 
-    victim = max(participants, key=lambda x: participants[x]["victim"])
-    suspect = max(participants, key=lambda x: participants[x]["suspect"])
+    # Analyze conversation behaviour
+
+    for i in range(1, len(messages)):
+
+        current = messages[i]
+        previous = messages[i-1]
+    
+        if current["sender"] == previous["sender"]:
+            continue
+    
+        msg = current["message"]
+    
+        # Demands for money
+        if any(word in msg for word in [
+            "pay", "money", "transfer", "send",
+            "ادفع", "حول", "فلوس"
+        ]):
+            participants[current["sender"]]["suspect"] += 5
+            evidence[current["sender"]]["money_requests"] += 1
+        # Threats
+        if any(word in msg for word in [
+            "or else",
+            "i will",
+            "blackmail",
+            "publish",
+            "hack",
+            "ابتزاز",
+            "تهديد",
+            "بفضحك",
+            "بنشر"
+        ]):
+            participants[current["sender"]]["suspect"] += 7
+
+    # Fear or pleading
+    if any(word in msg for word in [
+        "please",
+        "stop",
+        "don't",
+        "help",
+        "ارجوك",
+        "تكفى",
+        "ساعد",
+        "لا تنشر"
+    ]):
+        participants[current["sender"]]["victim"] += 6
+        evidence[current["sender"]]["help_requests"] += 1
+
+
+    victim = max(
+        participants,
+        key=lambda x: participants[x]["victim"]
+    )
+
+    suspect = max(
+        participants,
+        key=lambda x: participants[x]["suspect"]
+    )
 
     if victim == suspect:
-        ordered = sorted(participants.items(), key=lambda x: x[1]["suspect"], reverse=True)
+
+        ordered = sorted(
+            participants.items(),
+            key=lambda x:x[1]["suspect"],
+            reverse=True
+        )
+
         if len(ordered) > 1:
             suspect = ordered[1][0]
 
-    confidence = min((participants[victim]["victim"] + participants[suspect]["suspect"]) * 8, 100)
+    confidence = min(
+        (
+            participants[victim]["victim"] +
+            participants[suspect]["suspect"]
+        ) * 8,
+        100
+    )
 
     return {
-        "victim": victim,
-        "suspect": suspect,
-        "confidence": confidence,
-        "details": participants,
-        "evidence": evidence
+    "victim": victim,
+    "suspect": suspect,
+    "confidence": confidence,
+    "details": participants,
+    "evidence": evidence,
+    "reason": {
+        "victim": [
+            "Expressed fear or asked for help",
+            "Used pleading language",
+            "Received threatening responses"
+        ],
+        "suspect": [
+            "Used coercive language",
+            "Requested payment",
+            "Made threatening statements"
+        ]
     }
+}
 
 def analyze_chat_threat_score(text, lang_choice, device_role):
-    high_risk_words = ['تهديد', 'ابتزاز', 'فلوس', 'حساب', 'تحويل', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'money', 'blackmail', 'hack', 'transfer', 'wire', 'scam']
-    med_risk_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp']
+    high_risk_words = ['تهديد', 'ابتزاز', 'فلوس', 'حساب', 'تحويل', 'اخترقت', 'اطرش', 'صورك', 'fadiha', 'فضيحة', 'money', 'blackmail', 'hack', 'transfer', 'wire', 'scam', '凍結', '不正', '脅迫', '金']
+    med_risk_words = ['رابط', 'يوزر', 'باسورد', 'ايميل', 'كود', 'واتساب', 'link', 'password', 'code', 'verify', 'user', 'whatsapp', 'リンク', '口座']
     
     high_hits = sum(1 for w in high_risk_words if w in text.lower())
     med_hits = sum(1 for w in med_risk_words if w in text.lower())
@@ -373,13 +583,44 @@ def analyze_chat_threat_score(text, lang_choice, device_role):
         return score, "MEDIUM RISK" if lang_choice == "English" else "مستوى خطر متوسط"
     return score, "LOW RISK" if lang_choice == "English" else "مستوى خطر منخفض"
 
+def analyze_sentiment_and_tone(text):
+    threat_words = ['تهديد', 'ابتزاز', 'فضيحة', 'بفضحك', 'انشر', 'صورك', 'blackmail', 'expose', 'threat', '不正', '脅迫', '拡散']
+    fear_words = ['خايف', 'ارجوك', 'لا تنشر', 'ستر', 'تكفى', 'please', 'dont', 'afraid', 'stop', '不安', 'お願い', '助けて']
+    financial_words = ['تحويل', 'فلوس', 'دينار', 'حساب', 'كاش', 'money', 'cash', 'pay', 'transfer', '振り込んで', 'デポジット', 'ディナール', '送金']
+    
+    t_count = sum(1 for w in threat_words if w in text.lower())
+    f_count = sum(1 for w in fear_words if w in text.lower())
+    m_count = sum(1 for w in financial_words if w in text.lower())
+    total = t_count + f_count + m_count if (t_count + f_count + m_count) > 0 else 1
+    
+    return {
+        "Threat Tone": round((t_count/total)*100, 1),
+        "Victim Response": round((f_count/total)*100, 1),
+        "Financial Demands": round((m_count/total)*100, 1)
+    }
+
 def extract_financial_amounts(text):
-    amounts = re.findall(r'\b(\d+(?:\.\d+)?)\s*(?:دينار|بحريني|BD|BHD|dollar|\$|euro)\b', text.lower())
+    amounts = re.findall(r'\b(\d+(?:\.\d+)?)\s*(?:دينار|بحريني|BD|BHD|dollar|\$|euro|日元|yen|ディナール)\b', text.lower())
     total_extracted = sum(float(amt) for amt in amounts)
     return amounts, total_extracted
 
+def analyze_url_or_ip(item, lang_choice):
+    is_ip = re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', item)
+    if is_ip:
+        return ("SUSPICIOUS IP" if lang_choice == "English" else "IP مشبوه"), 70, "Flagged Infrastructure routing"
+    suspicious_keywords = ['login', 'verify', 'update', 'bank', 'secure', 'free', 'gift', 'crypto', 'secure-bank']
+    score = 0
+    reasons = []
+    for word in suspicious_keywords:
+        if word in item.lower():
+            score += 25
+            reasons.append(f"Keyword '{word}'")
+    if score >= 50:
+        return ("HIGH RISK" if lang_choice == "English" else "خطورة عالية"), min(score, 100), ", ".join(reasons)
+    return ("SAFE" if lang_choice == "English" else "آمن"), score, "-"
+
 # ==============================================================================
-# REPORTLAB PDF GENERATOR FUNCTION
+# REPORTLAB PDF GENERATOR FUNCTION (WITH CHAIN OF CUSTODY)
 # ==============================================================================
 def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash, score, score_label, ibans, emails, phones, urls, total_money, recon_data, audit_logs, identity):
     buffer = io.BytesIO()
@@ -420,7 +661,7 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
 
     risk_data = [
         [Paragraph("<b>Threat Index Score</b>", body_style), Paragraph("<b>Risk Classification</b>", body_style), Paragraph("<b>Detected Financial Extortion</b>", body_style)],
-        [Paragraph(f"<b>{score}%</b>", body_style), Paragraph(str(score_label), body_style), Paragraph(f"{total_money} BHD", body_style)]
+        [Paragraph(f"<b>{score}%</b>", body_style), Paragraph(str(score_label), body_style), Paragraph(f"{total_money} BHD / Units", body_style)]
     ]
     risk_table = Table(risk_data, colWidths=[180, 180, 180])
     risk_table.setStyle(TableStyle([
@@ -438,9 +679,9 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     story.append(Paragraph("3. Victim / Suspect Identification", h2_style))
 
     identity_table = Table([
-        [Paragraph("<b>Victim</b>", body_style), Paragraph(str(identity["victim"]), body_style)],
-        [Paragraph("<b>Suspect</b>", body_style), Paragraph(str(identity["suspect"]), body_style)],
-        [Paragraph("<b>Confidence</b>", body_style), Paragraph(f"{identity['confidence']}%", body_style)]
+        ["Victim", identity["victim"]],
+        ["Suspect", identity["suspect"]],
+        ["Confidence", f"{identity['confidence']}%"]
     ], colWidths=[170, 370])
 
     identity_table.setStyle(TableStyle([
@@ -464,21 +705,13 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("5. OSINT Social Media Reconnaissance Results", h2_style))
-    valid_recon_data = [r for r in recon_data if r] if recon_data else []
-    if valid_recon_data:
+    if recon_data:
         osint_table_data = [[Paragraph("<b>Platform</b>", body_style), Paragraph("<b>Status</b>", body_style), Paragraph("<b>Profile Endpoint</b>", body_style)]]
-        for r in valid_recon_data:
-            if isinstance(r, dict):
-                platform = r.get("Platform") or r.get("Platform / Network") or ""
-                status = r.get("Status") or r.get("Recon Status") or ""
-                url = r.get("URL") or r.get("Profile Link") or ""
-            else:
-                platform, status, url = str(r[0]), str(r[1]), str(r[2])
-
+        for r in recon_data:
             osint_table_data.append([
-                Paragraph(str(platform), body_style),
-                Paragraph(str(status), body_style),
-                Paragraph(str(url), body_style)
+                Paragraph(str(r.get("Platform / Network", r.get("Platform", ""))), body_style),
+                Paragraph(str(r.get("Recon Status", r.get("Status", ""))), body_style),
+                Paragraph(str(r.get("Profile Link", r.get("URL", ""))), body_style)
             ])
         osint_table = Table(osint_table_data, colWidths=[120, 140, 280])
         osint_table.setStyle(TableStyle([
@@ -515,6 +748,27 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     ]))
     story.append(coc_table)
 
+    story.append(Paragraph("7. AI Investigation Summary", h2_style))
+
+    summary = f"""
+    <b>Likely Victim:</b> {identity['victim']}<br/><br/>
+    
+    <b>Likely Suspect:</b> {identity['suspect']}<br/><br/>
+    
+    <b>Confidence:</b> {identity['confidence']}%<br/><br/>
+    
+    This assessment was generated automatically by analysing
+    conversation behaviour, linguistic indicators,
+    financial requests, and threatening communication patterns.
+    
+    The output should be treated as an investigative aid
+    and verified by a qualified digital forensic investigator.
+    """
+    
+    story.append(Paragraph(summary, body_style))
+    story.append(Spacer(1,10))
+
+    
     story.append(Spacer(1, 15))
     story.append(Paragraph("<b>[ CONFIDENTIAL - OFFICIALLY VERIFIED FORENSIC CHAIN OF CUSTODY ]</b>", subtitle_style))
 
@@ -523,86 +777,607 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
     return buffer.getvalue()
 
 # ==============================================================================
-# MAIN STREAMLIT APPLICATION INTERFACE
+# BILINGUAL LOCALIZATION LEXICON
 # ==============================================================================
-def main():
-    st.set_page_config(page_title="CFIS - Cyber Forensics Suite", layout="wide")
-    apply_custom_theme()
+LEXICON = {
+    "English": {
+        "title": "🛡️ Chat-Forensics Intelligence Suite (CFIS)",
+        "sub": "CID Anti-Electronic Crime Directorate | Advanced Multi-Platform Forensic Triage V6",
+        "sb_header": "📁 Investigative Case Metadata",
+        "sb_case": "Official Case Number:",
+        "sb_officer": "Investigating Officer Name / Rank:",
+        "sb_suspect": "Suspect Identifier / Alias:",
+        "sb_app_src": "Select Chat App Source:",
+        "sb_dev_role": "Select Device Owner Role:",
+        "upload_lbl": "Upload Exported Chat File (.txt or .json)",
+        "save_vault_btn": "💾 Save Case to Central Archive",
+        "intel_header": "🧠 Psychological Intelligence & Deep Identity Analysis",
+        "card_tone": "🎭 Chat & Crime Tone Analysis",
+        "card_financial": "💰 Financial Extortion Matrix",
+        "card_speaker": "🕸️ Participant Structure & Dominance",
+        "threat_idx": "💥 **Overall Threat Index:**",
+        "forensic_triage_res": "| **Forensic Triage Result:**",
+        "art_title": "🔍 High-Value Artifact Extraction & Threat Intel Matching",
+        "tab_bank": "🏦 Banking Indicators",
+        "tab_phone": "📞 Telephony & Comms",
+        "tab_url": "🔗 URL & IP Scanner",
+        "tab_social": "📲 Social Media & OSINT Recon",
+        "tab_vault": "📁 Case Vault & Archive Manager",
+        "pdf_btn": "Generate Official PDF Forensics Report",
+        "col_iban": "IBAN Account Number",
+        "col_status": "Cross-Case Match Status",
+        "col_phone": "Phone Number",
+        "col_match": "Database Match",
+        "col_email": "Email Address",
+        "col_url": "Extracted URL / IP",
+        "col_risk": "Risk Assessment",
+        "col_score": "Threat Score",
+        "col_flags": "Risk Indicators Found",
+        "clear_btn": "🗑️ Clear Current Evidence",
+        "checksum_lbl": "📄 Evidence Digital Fingerprint & Integrity Check",
+        "trans_header": "🔠 Real-time Forensic Language Translator",
+        "trans_lbl": "Select original chat file language (Source Language):",
+        "trans_btn": "🔮 Translate & Update Forensic Matrix Now",
+        "trans_back": "🔄 Revert to Original Untranslated File",
+        "trans_matrix_lbl": "Current Translated Chat Stream:",
+        "kw_inspector_title": "🔍 Multi-Contact Inspector & Color-Coded Map",
+        "load_archive_btn": "Load Target Archive",
+        "archive_search_lbl": "Recall previous case file by ID:",
+        "stored_records_lbl": "🗄️ Currently Stored Central Records:",
+        "no_evidence_msg": "⚠️ Please upload a chat file (.txt / .json) first to begin the forensic evaluation.",
+        "active_trans_msg": "📊 The forensic analytics matrix is currently operating on the [Approved Translated Text].",
+        "no_participants": "No structured participants extracted.",
+        "osint_header": "🔎 Target User Handle Detection & Cross-Platform Recon",
+        "osint_btn": "⚡ Run Automated Social Media Footprint Recon",
+        "osint_custom_input": "Or enter a specific suspect handle to investigate:",
+        "col_platform": "Platform / Network",
+        "col_profile": "Profile Link",
+        "col_osint_status": "Recon Status"
+    },
+    "العربية": {
+        "title": "🛡️ المنظومة الذكية لتحليل أدلة المحادثات الرقمية (CFIS)",
+        "sub": "إدارة مكافحة الجرائم الإلكترونية | مختبر الأدلة الرقمية متعدد المنصات",
+        "sb_header": "📁 بيانات ملف القضية الجنائية",
+        "sb_case": "رقم القضية الرسمي:",
+        "sb_officer": "اسم ورتبة ضابط التحقيق:",
+        "sb_suspect": "هوية / اسم الشهرة للمشتبه به:",
+        "sb_app_src": "اختر تطبيق المحادثة المصدر:",
+        "sb_dev_role": "صفة صاحب الجهاز المظبوط:",
+        "upload_lbl": "رفع سجل المحادثات المصدر (.txt أو .json)",
+        "save_vault_btn": "💾 حفظ ملف القضية بالأرشيف المركزي",
+        "intel_header": "🧠 الاستخبارات النفسية وتحليل الهوية المعمق",
+        "card_tone": "🎭 تحليل نبرة المحادثة والجريمة",
+        "card_financial": "💰 مصفوفة الحصر والابتزاز المالي",
+        "card_speaker": "🕸️ هيكلة أطراف المحادثة والمهيمن",
+        "threat_idx": "💥 **مؤشر خطورة المحادثة الكلي:**",
+        "forensic_triage_res": "| **النتيجة الجنائية للفرز:**",
+        "art_title": "🔍 استخراج الأدلة الرقمية ومطابقة الاستخبارات الجنائية",
+        "tab_bank": "🏦 المؤشرات البنكية",
+        "tab_phone": "📞 الاتصالات والهواتف",
+        "tab_url": "🔗 فحص الروابط والـ IP",
+        "tab_social": "📲 حسابات التواصل والاستخبارات المفتوحة",
+        "tab_vault": "📁 إدارة قاعدة البيانات والأرشيف المركزي",
+        "pdf_btn": "توليد التقرير الجنائي الرسمي (PDF)",
+        "col_iban": "رقم الحساب البنكي (IBAN)",
+        "col_status": "حالة المطابقة في القضايا الأخرى",
+        "col_phone": "رقم الهاتف المرصود",
+        "col_match": "المطابقة الجنائية",
+        "col_email": "البريد الإلكتروني",
+        "col_url": "الرابط أو الـ IP المستخرج",
+        "col_risk": "تقييم مستوى الخطورة",
+        "col_score": "درجة التهديد الرقمي",
+        "col_flags": "مؤشرات الشبهة المرصودة",
+        "clear_btn": "🗑️ مسح الملف الحالي",
+        "checksum_lbl": "📄 بصمة الدليل الرقمي وضمان النزاهة",
+        "trans_header": "🔠 كاشف ومترجم اللغات الجنائية الفوري",
+        "trans_lbl": "اختر لغة ملف المحادثة الأصلي (Source Language):",
+        "trans_btn": "🔮 ترجمة وتحديث مصفوفة التحليل الجنائي فوراً",
+        "trans_back": "🔄 العودة للملف الأصلي (الغير مترجم)",
+        "trans_matrix_lbl": "نص المحادثة المترجم الحالي:",
+        "kw_inspector_title": "🔍 مستعرض تظليل أطراف المحادثة والكلمات المفتاحية",
+        "load_archive_btn": "تحميل الأرشيف المستهدف",
+        "archive_search_lbl": "استدعاء قضية مؤرشفة سابقة برقم الملف:",
+        "stored_records_lbl": "🗄️ السجلات المركزية المخزنة حالياً:",
+        "no_evidence_msg": "⚠️ الرجاء رفع ملف المحادثة (.txt / .json) أولاً للبدء بالفحص والتحليل الجنائي المتقدم.",
+        "active_trans_msg": "📊 مصفوفة التحليل تعمل حالياً بناءً على [النص المترجم المعتمد].",
+        "no_participants": "لم يتم استخراج أطراف مهيكلة للمحادثة.",
+        "osint_header": "🔎 رصد المعرفات واستخبارات حسابات التواصل الاجتماعي",
+        "osint_btn": "⚡ تشغيل فحص البصمة الرقمية على المنصات",
+        "osint_custom_input": "أو أدخل معرفاً (Username) محدداً للمشتبه به للبحث عنه:",
+        "col_platform": "منصة التواصل الاجتماعي",
+        "col_profile": "رابط الحساب المرصود",
+        "col_osint_status": "نتيجة التتبع والاستخبار"
+    }
+}
 
-    st.title("🔍 Cyber Forensics Data Analysis Suite")
-    st.markdown("---")
+# ==============================================================================
+# STATE INITIALIZATION & STREAMLIT UI RENDER
+# ==============================================================================
+st.set_page_config(page_title="CFIS - Advanced Forensic Suite", layout="wide")
+apply_custom_theme()
 
-    # Sidebar inputs
-    st.sidebar.header("📋 Case Details")
-    case_number = st.sidebar.text_input("Case Number", "2026/CID/1001")
-    officer_name = st.sidebar.text_input("Investigating Officer", "Lt. Jasim")
-    suspect_name = st.sidebar.text_input("Suspect Name / Alias", "Unknown Target")
-    app_source = st.sidebar.selectbox("App Data Source", ["WhatsApp (.txt)", "Telegram (.json)", "Instagram DMs (.json)", "Facebook Messenger (.json)"])
-    device_role = st.sidebar.selectbox("Evidence Role", ["Suspect Device", "Victim Device"])
-    language = st.sidebar.radio("Interface Language", ["English", "Arabic"])
+if 'active_chat_content' not in st.session_state:
+    st.session_state['active_chat_content'] = None
+if 'active_file_hash' not in st.session_state:
+    st.session_state['active_file_hash'] = "NO_EVIDENCE_STREAM"
+if 'translated_chat_content' not in st.session_state:
+    st.session_state['translated_chat_content'] = None
+if 'last_osint_results' not in st.session_state:
+    st.session_state['last_osint_results'] = []
+if 'audit_trail' not in st.session_state:
+    st.session_state['audit_trail'] = []
 
-    uploaded_file = st.sidebar.file_uploader("Upload Extraction File", type=["txt", "json"])
+lang = st.sidebar.selectbox("🌐 UI Language / لغة الواجهة", ["العربية", "English"])
+tx = LEXICON[lang]
 
+st.title(tx["title"])
+st.subheader(tx["sub"])
+st.markdown("<hr style='border-color: #30363d;'>", unsafe_allow_html=True)
+
+st.sidebar.header(tx["sb_header"])
+case_id = st.sidebar.text_input(tx["sb_case"], value="2026/CID/1054")
+investigator = st.sidebar.text_input(tx["sb_officer"], value="Lt. Dana Khalifa")
+suspect_name = st.sidebar.text_input(tx["sb_suspect"], value="Target_Alpha")
+
+app_source = st.sidebar.selectbox(
+    tx["sb_app_src"], 
+    ["WhatsApp (.txt)", "Telegram (.json)", "Instagram DMs (.json)", "Facebook Messenger (.json)"]
+)
+
+device_role = st.sidebar.selectbox(
+    tx["sb_dev_role"], 
+    ["🔴 Suspect / Criminal Device", "🔵 Victim Device"]
+)
+
+def add_audit_entry(phase, action, officer, file_hash):
+    entry = {
+        "phase": phase,
+        "action": action,
+        "timestamp": datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+        "officer": officer,
+        "hash_stamp": file_hash
+    }
+    st.session_state['audit_trail'].append(entry)
+
+main_tabs = st.tabs(["🔍 Evidence Analyzer", "📁 " + tx["tab_vault"]])
+
+with main_tabs[0]:
+    uploaded_file = st.file_uploader(tx["upload_lbl"], type=["txt", "json"])
+    
     if uploaded_file is not None:
-        file_bytes = uploaded_file.read()
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
-        chat_text = parse_uploaded_chat(file_bytes, app_source)
+        try:
+            file_bytes = uploaded_file.read()
+            if len(file_bytes) > 0:
+                new_hash = hashlib.sha256(file_bytes).hexdigest()
+                if st.session_state['active_file_hash'] != new_hash:
+                    parsed_text = parse_uploaded_chat(file_bytes, app_source)
+                    st.session_state['active_chat_content'] = parsed_text
+                    st.session_state['active_file_hash'] = new_hash
+                    st.session_state['translated_chat_content'] = None
+                    st.session_state['audit_trail'] = []
+                    
+                    add_audit_entry("1. Ingestion", f"Evidence imported ({app_source}) & SHA-256 calculated", investigator, new_hash)
+                    add_audit_entry("2. Analysis", f"Parsed multi-format stream ({device_role})", investigator, new_hash)
+        except Exception as e:
+            st.error(f"Error reading forensic stream: {e}")
 
-        st.sidebar.success(f"SHA256: {file_hash[:10]}...")
+    if st.session_state['translated_chat_content']:
+        chat_data = st.session_state['translated_chat_content']
+        st.info(tx["active_trans_msg"])
+    else:
+        chat_data = st.session_state['active_chat_content']
 
-        # Run analytics
-        contacts_map = extract_contacts_map(chat_text)
-        identity = identify_victim_suspect(chat_text)
-        score, score_label = analyze_chat_threat_score(chat_text, language, device_role)
-        amounts, total_money = extract_financial_amounts(chat_text)
+    if chat_data:
+        # Extract Contact Map for Dynamic Color Badging
+        contact_map = extract_contacts_map(chat_data)
 
-        ibans = list(set(re.findall(r'\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b', chat_text)))
-        emails = list(set(re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', chat_text)))
-        phones = list(set(re.findall(r'\+?\d{8,15}', chat_text)))
-        urls = list(set(re.findall(r'https?://[^\s]+|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', chat_text)))
+        # Translation Box
+        st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+        st.markdown(f"### {tx['trans_header']}")
+        src_lang = st.selectbox(tx["trans_lbl"], ["auto (كشف تلقائي)", "ja", "en", "ur", "hi", "ar"])
+        target_lang_code = 'ar' if lang == "العربية" else 'en'
+        
+        if st.button(tx["trans_btn"]):
+            with st.spinner("Translating..."):
+                try:
+                    raw_data = st.session_state['active_chat_content']
+                    chunk_size = 2000
+                    text_chunks = [raw_data[i:i+chunk_size] for i in range(0, len(raw_data), chunk_size)]
+                    translated_chunks = []
+                    for chunk in text_chunks:
+                        if chunk.strip():
+                            translated_text = GoogleTranslator(source=src_lang.split(" ")[0], target=target_lang_code).translate(chunk)
+                            translated_chunks.append(translated_text)
+                    
+                    st.session_state['translated_chat_content'] = "".join(translated_chunks)
+                    add_audit_entry("3. Translation", f"Translated evidence via Deep Engine to {target_lang_code}", investigator, st.session_state['active_file_hash'])
+                    st.success("Success!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        
+        if st.session_state['translated_chat_content']:
+            st.text_area(tx["trans_matrix_lbl"], value=st.session_state['translated_chat_content'], height=150)
+            if st.button(tx["trans_back"]):
+                st.session_state['translated_chat_content'] = None
+                st.rerun()
+                
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        # Create Dashboard UI Tabs
-        tab1, tab2, tab3 = st.tabs(["📊 Analytics Overview", "📜 Chat Analysis", "📄 Export Report"])
+        # Multi-Contact Color-Coded Inspector Card
+        st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+        st.markdown(f"### {tx['kw_inspector_title']}")
+        
+        # Render Contact Legend Badges
+        st.write("👤 **Detected Contacts & Victims Legend:**")
+        legend_htmls = []
+        for c_name, c_style in contact_map.items():
+            legend_htmls.append(
+                f'<span class="contact-badge" style="background-color: {c_style["bg"]}; border-color: {c_style["border"]}; color: {c_style["text"]}; padding: 4px 10px; margin-bottom: 6px;">{c_name}</span>'
+            )
+        st.markdown(" ".join(legend_htmls) if legend_htmls else "No structured contact handles detected.", unsafe_allow_html=True)
+        
+        st.markdown("<hr style='border-color: #30363d; margin: 10px 0;'>", unsafe_allow_html=True)
+        st.markdown("🔍 **Artifact Legend:** <span class='hl-red'>Threat / Extortion</span> | <span class='hl-yellow'>Financial / IBAN</span> | <span class='hl-blue'>Credentials / URLs</span>", unsafe_allow_html=True)
+        st.markdown("<br/>", unsafe_allow_html=True)
+        
+        # Render Multi-Color Highlighted Chat Stream
+        highlighted_html = generate_keyword_highlight_html(chat_data, contact_map)
+        st.markdown(f"<div class='highlight-box'>{highlighted_html}</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
+        # Checksum and Controls
+        st.markdown(f"<div class='forensic-card'><h4>{tx['checksum_lbl']}</h4><code>SHA-256: {st.session_state['active_file_hash']}</code></div>", unsafe_allow_html=True)
+        
+        col_ctl1, col_ctl2 = st.columns(2)
+        with col_ctl1:
+            if st.button(tx["clear_btn"]):
+                st.session_state['active_chat_content'] = None
+                st.session_state['translated_chat_content'] = None
+                st.session_state['active_file_hash'] = "NO_EVIDENCE_STREAM"
+                st.session_state['last_osint_results'] = []
+                st.session_state['audit_trail'] = []
+                st.rerun()
+        with col_ctl2:
+            if st.button(tx["save_vault_btn"]):
+                save_full_case(case_id, investigator, suspect_name, app_source, device_role, st.session_state['active_file_hash'], chat_data)
+                add_audit_entry("4. Archival", "Case saved to SQLite Local Vault", investigator, st.session_state['active_file_hash'])
+                st.success("Saved to Vault!")
+
+        # Visual Analytics
+        st.markdown(f"## {tx['intel_header']}")
+        col_an1, col_an2, col_an3 = st.columns(3)
+        
+        with col_an1:
+            st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+            st.markdown(f"#### {tx['card_tone']}")
+            tones = analyze_sentiment_and_tone(chat_data)
+            fig_tone = px.bar(x=list(tones.values()), y=list(tones.keys()), orientation='h', color=list(tones.values()), color_continuous_scale='Reds')
+            fig_tone.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9")
+            st.plotly_chart(fig_tone, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+        with col_an2:
+            st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+            st.markdown(f"#### {tx['card_financial']}")
+            amts, total_money = extract_financial_amounts(chat_data)
+            st.metric(label="Total Financial Extortion Detected", value=f"{total_money} BHD / Units")
+            st.caption(f"Detected Terms: {', '.join(amts) if amts else 'None'}")
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+        with col_an3:
+            st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+            st.markdown(f"#### {tx['card_speaker']}")
+            if contact_map:
+                sender_pattern = r'-\s([^:]+):|\]\s([^:]+):|\[[^\]]+\]\s([^:]+):'
+                senders_raw = re.findall(sender_pattern, chat_data)
+                senders = [s[0] if s[0] else (s[1] if s[1] else s[2]) for s in senders_raw if any(s)]
+                df_senders = pd.DataFrame(senders, columns=['Speaker']).value_counts().reset_index(name='Messages')
+                fig_speaker = px.pie(df_senders, names='Speaker', values='Messages', color_discrete_sequence=px.colors.qualitative.Dark24)
+                fig_speaker.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color="#c9d1d9")
+                st.plotly_chart(fig_speaker, use_container_width=True)
+            else:
+                st.info(tx["no_participants"])
+            st.markdown("</div>", unsafe_allow_html=True)
+        # Analyze victim and suspect
+        identity = identify_victim_suspect(chat_data)
+        overall_score, score_label = analyze_chat_threat_score(chat_data, lang, device_role)
+        st.markdown(f"<div class='forensic-card'>{tx['threat_idx']} {overall_score}% {tx['forensic_triage_res']} {score_label}</div>", unsafe_allow_html=True)
+        
+
+        # ==============================================================================
+        # Victim / Suspect Identification
+        # ==============================================================================
+
+        st.markdown("<div class='forensic-card'>", unsafe_allow_html=True)
+
+        st.markdown("### 👥 Victim / Suspect Identification")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(
+                "🟢 Victim",
+                identity["victim"]
+            )
+
+        with col2:
+            st.metric(
+                "🔴 Suspect",
+                identity["suspect"]
+            )
+
+        with col3:
+            st.metric(
+                "🎯 Confidence",
+                f"{identity['confidence']}%"
+            )
+        # ==========================
+        # Risk Level
+        # ==========================
+
+        if identity["confidence"] >= 80:
+            level = "🔴 HIGH"
+
+        elif identity["confidence"] >= 50:
+            level = "🟡 MEDIUM"
+
+        else:
+            level = "🟢 LOW"
+
+        st.metric("Risk Level", level)    
+
+        st.markdown("#### Analysis Details")
+
+        details_df = pd.DataFrame(identity["details"]).T
+        details_df.columns = [
+            "Victim Score",
+            "Suspect Score",
+            "Messages"
+        ]
+
+        st.dataframe(details_df, use_container_width=True)
+
+        st.markdown("### 🔎 Evidence Summary")
+
+        victim_data = identity["evidence"][identity["victim"]]
+        suspect_data = identity["evidence"][identity["suspect"]]
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.success(f"""
+        ### 🟢 Victim
+
+        **Name:** {identity['victim']}
+
+        Fear Expressions: {victim_data['fear']}
+
+        Help Requests: {victim_data['help_requests']}
+        """)
+
+        with col2:
+            st.error(f"""
+        ### 🔴 Suspect
+
+        **Name:** {identity['suspect']}
+
+        Threats: {suspect_data['threats']}
+
+        Money Requests: {suspect_data['money_requests']}
+        """)
+
+        st.markdown("### 📝 AI Findings")
+
+        st.success(
+                f"**Victim:** {identity['victim']}\n\n"
+                "Reason: Expressed fear, requested help, or attempted to stop the interaction."
+            )
+
+        st.error(
+                f"**Suspect:** {identity['suspect']}\n\n"
+                "Reason: Used threatening or coercive language and/or requested money."
+            )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # ==============================================================================
+        # AI Investigation Summary
+        # ==============================================================================
+
+        st.markdown("## 🧠 AI Investigation Summary")
+
+        st.info(f"""
+        Based on the behavioural analysis of the uploaded conversation, the system identified:
+
+        **🟢 Likely Victim:** {identity['victim']}
+
+        **🔴 Likely Suspect:** {identity['suspect']}
+
+        **🎯 Confidence:** {identity['confidence']}%
+
+        This conclusion was generated by analysing communication patterns, threatening language, financial requests, and indicators of fear or distress.
+
+        ⚠️ **Disclaimer:** This result is an investigative aid and should be verified by a qualified digital forensic investigator.
+        """)
+
+
+        # Artifact Extraction
+        iban_pattern = r'[A-Z]{2}\d{2}[A-Z0-9]{10,30}'
+        phone_pattern = r'\+?973\d{8}'
+        email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+        url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+'
+        ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+        btc_pattern = r'\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b'
+
+        extracted_ibans = list(set(re.findall(iban_pattern, chat_data)))
+        extracted_emails = list(set(re.findall(email_pattern, chat_data)))
+        extracted_phones = list(set([p.strip() for p in re.findall(phone_pattern, chat_data) if len(p.strip()) > 7]))
+        extracted_network = list(set(re.findall(url_pattern, chat_data) + re.findall(ip_pattern, chat_data)))
+        extracted_btc = list(set(re.findall(btc_pattern, chat_data)))
+        extracted_handles = extract_usernames_and_handles(chat_data)
+
+        st.markdown(f"## {tx['art_title']}")
+        tab1, tab2, tab3, tab4 = st.tabs([tx["tab_bank"], tx["tab_phone"], tx["tab_url"], tx["tab_social"]])
+        
         with tab1:
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Threat Score", f"{score}%", delta=score_label)
-            col2.metric("Detected Funds", f"{total_money} BHD")
-            col3.metric("Extracted Identifiers", len(ibans) + len(emails) + len(phones))
-
-            st.subheader("Role Identification Analysis")
-            st.write(f"**Identified Victim:** {identity['victim']}")
-            st.write(f"**Identified Suspect:** {identity['suspect']}")
-            st.write(f"**Analysis Confidence:** {identity['confidence']}%")
-
+            if extracted_ibans or extracted_btc:
+                if extracted_ibans:
+                    st.write("🏦 Extracted IBANs:")
+                    iban_records = [{tx["col_iban"]: iban, tx["col_status"]: ("⚠️ MATCH FOUND" if check_cross_case(iban) else "Clear")} for iban in extracted_ibans]
+                    st.dataframe(pd.DataFrame(iban_records), use_container_width=True)
+                if extracted_btc:
+                    st.write("🪙 Extracted Crypto Wallets:")
+                    st.dataframe(pd.DataFrame(extracted_btc, columns=["Crypto Address"]), use_container_width=True)
+            else:
+                st.info("No banking/crypto artifacts extracted.")
+                
         with tab2:
-            st.subheader("Highlighted Evidence Feed")
-            highlighted_html = generate_keyword_highlight_html(chat_text, contacts_map)
-            st.markdown(f'<div class="highlight-box">{highlighted_html}</div>', unsafe_allow_html=True)
+            if extracted_phones or extracted_emails:
+                col_p, col_e = st.columns(2)
+                
+                with col_p:
+                    st.write("📞 **Captured Phone Numbers**")
+                    if extracted_phones:
+                        phone_data = []
+                        for phone in extracted_phones:
+                            match_info = check_cross_case(phone)
+                            phone_data.append({
+                                tx["col_phone"]: phone,
+                                tx["col_match"]: f"⚠️ Case: {match_info[0]}" if match_info else "Clear / No Match"
+                            })
+                        st.dataframe(pd.DataFrame(phone_data), use_container_width=True)
+                    else:
+                        st.info("No phone numbers found.")
+
+                with col_e:
+                    st.write("📧 **Captured Email Addresses**")
+                    if extracted_emails:
+                        email_data = []
+                        for email in extracted_emails:
+                            match_info = check_cross_case(email)
+                            email_data.append({
+                                tx["col_email"]: email,
+                                tx["col_match"]: f"⚠️ Case: {match_info[0]}" if match_info else "Clear / No Match"
+                            })
+                        st.dataframe(pd.DataFrame(email_data), use_container_width=True)
+                    else:
+                        st.info("No email addresses found.")
+            else:
+                st.info("No communications metadata found.")
 
         with tab3:
-            st.subheader("Generate Case Report")
-            audit_logs = [
-                {"phase": "Ingestion", "action": "File Loaded", "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "officer": officer_name, "hash_stamp": file_hash}
-            ]
-            recon_sample = [
-                {"Platform": "Instagram", "Status": "Active", "URL": f"https://instagram.com/{suspect_name}"}
-            ]
-            
-            if st.button("Generate & Download PDF"):
-                pdf_bytes = create_reportlab_pdf(
-                    case_number, officer_name, suspect_name, app_source, device_role, 
-                    file_hash, score, score_label, ibans, emails, phones, urls, 
-                    total_money, recon_sample, audit_logs, identity
-                )
-                st.download_button(
-                    label="📥 Download Forensic Report PDF",
-                    data=pdf_bytes,
-                    file_name=f"Forensic_Report_{case_number.replace('/', '_')}.pdf",
-                    mime="application/pdf"
-                )
-    else:
-        st.info("Please upload a chat extract or JSON log from the sidebar to begin forensic processing.")
+            if extracted_network:
+                url_data = []
+                for item in extracted_network:
+                    risk_lvl, threat_score, flags = analyze_url_or_ip(item, lang)
+                    url_data.append({
+                        tx["col_url"]: item,
+                        tx["col_risk"]: risk_lvl,
+                        tx["col_score"]: f"{threat_score}%",
+                        tx["col_flags"]: flags
+                    })
+                st.dataframe(pd.DataFrame(url_data), use_container_width=True)
+            else:
+                st.info("No URLs or IP addresses detected.")
 
-if __name__ == "__main__":
-    main()
+        with tab4:
+            st.markdown(f"### {tx['osint_header']}")
+            custom_handle = st.text_input(tx["osint_custom_input"], value="")
+            
+            if st.button(tx["osint_btn"]):
+                handles_to_scan = set(extracted_handles)
+                if custom_handle.strip():
+                    handles_to_scan.add(custom_handle.strip())
+
+                if handles_to_scan:
+                    results = []
+                    with st.spinner("Executing OSINT scans across public endpoints..."):
+                        platforms = [
+                            ("GitHub", "https://github.com/{}"),
+                            ("Telegram", "https://t.me/{}"),
+                            ("Twitter/X", "https://x.com/{}"),
+                            ("Instagram", "https://instagram.com/{}")
+                        ]
+                        for handle in handles_to_scan:
+                            for name, url_template in platforms:
+                                target_url = url_template.format(handle)
+                                status, endpoint = check_social_media_account(name, target_url)
+                                results.append({
+                                    "Handle": handle,
+                                    tx["col_platform"]: name,
+                                    tx["col_osint_status"]: status,
+                                    tx["col_profile"]: endpoint
+                                })
+                    st.session_state['last_osint_results'] = results
+                    add_audit_entry("OSINT Scan", f"Ran OSINT check for {len(handles_to_scan)} handle(s)", investigator, st.session_state['active_file_hash'])
+                else:
+                    st.warning("No handle or username detected for scanning.")
+
+            if st.session_state['last_osint_results']:
+                st.dataframe(pd.DataFrame(st.session_state['last_osint_results']), use_container_width=True)
+
+        st.markdown("---")
+        
+        final_audit_trail = list(st.session_state['audit_trail'])
+        final_audit_trail.append({
+            "phase": "Reporting",
+            "action": "PDF Forensic Report Exported",
+            "timestamp": datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+            "officer": investigator,
+            "hash_stamp": st.session_state['active_file_hash']
+        })
+        st.write("OSINT exists:", "last_osint_results" in st.session_state)
+
+        if "last_osint_results" in st.session_state:
+            st.write(st.session_state["last_osint_results"])
+        else:
+            st.error("last_osint_results is missing!")
+        
+        pdf_bytes = create_reportlab_pdf(
+            case_id,
+            investigator,
+            suspect_name,
+            app_source,
+            device_role,
+            st.session_state['active_file_hash'],
+            overall_score,
+            score_label,
+            extracted_ibans,
+            extracted_emails,
+            extracted_phones,
+            extracted_network,
+            total_money,
+            st.session_state['last_osint_results'],
+            final_audit_trail,
+            identity
+        )
+        
+        st.download_button(
+            label=tx["pdf_btn"],
+            data=pdf_bytes,
+            file_name=f"Forensic_Report_{case_id.replace('/', '_')}.pdf",
+            mime="application/pdf"
+        )
+    else:
+        st.warning(tx["no_evidence_msg"])
+
+with main_tabs[1]:
+    st.markdown(f"### {tx['tab_vault']}")
+    search_case_id = st.text_input(tx["archive_search_lbl"], value="")
+    
+    if st.button(tx["load_archive_btn"]):
+        archived_case = load_full_case(search_case_id)
+        if archived_case:
+            st.session_state['active_chat_content'] = archived_case[0]
+            st.session_state['active_file_hash'] = archived_case[3]
+            st.session_state['translated_chat_content'] = None
+            st.session_state['audit_trail'] = []
+            add_audit_entry("Vault Load", f"Loaded archived case {search_case_id}", investigator, archived_case[3])
+            st.success(f"Successfully loaded case {search_case_id} into the analyzer matrix.")
+            st.rerun()
+        else:
+            st.error("Case ID not found in the central vault archive.")
+
+    st.markdown(f"#### {tx['stored_records_lbl']}")
+    indicators_df = get_all_indicators()
+    st.dataframe(indicators_df, use_container_width=True)
