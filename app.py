@@ -1354,6 +1354,13 @@ with main_tabs[0]:
        
         st.write("OSINT passed to PDF:")
         st.json(st.session_state["last_osint_results"])
+        st.subheader("Debug OSINT")
+
+        st.write("Session State:")
+        st.write(st.session_state.get("last_osint_results", "Not Found"))
+        
+        st.write("Length:")
+        st.write(len(st.session_state.get("last_osint_results", [])))
         pdf_bytes = create_reportlab_pdf(
             case_id,
             investigator,
