@@ -1328,10 +1328,22 @@ with main_tabs[0]:
         })
 
         pdf_bytes = create_reportlab_pdf(
-            case_id, investigator, suspect_name, app_source, device_role,
-            st.session_state['active_file_hash'], overall_score, score_label, 
-            extracted_ibans, extracted_emails, extracted_phones, extracted_network, 
-            total_money, st.session_state['last_osint_results'], final_audit_trail
+            case_id,
+            investigator,
+            suspect_name,
+            app_source,
+            device_role,
+            st.session_state['active_file_hash'],
+            overall_score,
+            score_label,
+            extracted_ibans,
+            extracted_emails,
+            extracted_phones,
+            extracted_network,
+            total_money,
+            st.session_state['last_osint_results'],
+            final_audit_trail,
+            identity
         )
         
         st.download_button(
