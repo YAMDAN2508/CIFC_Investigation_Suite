@@ -709,9 +709,9 @@ def create_reportlab_pdf(case_id, officer, suspect, app_src, dev_role, file_hash
         osint_table_data = [[Paragraph("<b>Platform</b>", body_style), Paragraph("<b>Status</b>", body_style), Paragraph("<b>Profile Endpoint</b>", body_style)]]
         for r in recon_data:
             osint_table_data.append([
-                Paragraph(str(r.get("Platform / Network", r.get("Platform", ""))), body_style),
-                Paragraph(str(r.get("Recon Status", r.get("Status", ""))), body_style),
-                Paragraph(str(r.get("Profile Link", r.get("URL", ""))), body_style)
+                Paragraph(r["Platform"], body_style),
+                Paragraph(r["Status"], body_style),
+                Paragraph(r["URL"], body_style),
             ])
         osint_table = Table(osint_table_data, colWidths=[120, 140, 280])
         osint_table.setStyle(TableStyle([
@@ -1304,9 +1304,9 @@ with main_tabs[0]:
                                 status, endpoint = check_social_media_account(name, target_url)
                                 results.append({
                                     "Handle": handle,
-                                    tx["col_platform"]: name,
-                                    tx["col_osint_status"]: status,
-                                    tx["col_profile"]: endpoint
+                                    "Platform": name,
+                                    "Status": status,
+                                    "URL": endpoint
                                 })
                     st.session_state['last_osint_results'] = results
                     add_audit_entry("OSINT Scan", f"Ran OSINT check for {len(handles_to_scan)} handle(s)", investigator, st.session_state['active_file_hash'])
@@ -1314,7 +1314,15 @@ with main_tabs[0]:
                     st.warning("No handle or username detected for scanning.")
 
             if st.session_state['last_osint_results']:
-                st.dataframe(pd.DataFrame(st.session_state['last_osint_results']), use_container_width=True)
+                df = pd.DataFrame(st.session_state["last_osint_results"])
+
+                df = df.rename(columns={
+                    "Platform": tx["col_platform"],
+                    "Status": tx["col_osint_status"],
+                    "URL": tx["col_profile"]
+                })
+                
+                st.dataframe(df, use_container_width=True)
 
         st.markdown("---")
         
@@ -1326,14 +1334,11 @@ with main_tabs[0]:
             "officer": investigator,
             "hash_stamp": st.session_state['active_file_hash']
         })
-        st.write("OSINT exists:", "last_osint_results" in st.session_state)
-
-        if "last_osint_results" in st.session_state:
-            st.write(st.session_state["last_osint_results"])
-        else:
-            st.error("last_osint_results is missing!")
-        
+       
+        st.write("OSINT passed to PDF:")
+        st.json(st.session_state["last_osint_results"])
         pdf_bytes = create_reportlab_pdf(
+            print(len(recon_data))
             case_id,
             investigator,
             suspect_name,
