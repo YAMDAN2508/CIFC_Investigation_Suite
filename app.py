@@ -1355,7 +1355,6 @@ with main_tabs[0]:
         st.write("OSINT passed to PDF:")
         st.json(st.session_state["last_osint_results"])
         pdf_bytes = create_reportlab_pdf(
-            print(len(recon_data))
             case_id,
             investigator,
             suspect_name,
