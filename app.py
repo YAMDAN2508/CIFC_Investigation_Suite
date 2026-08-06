@@ -179,17 +179,37 @@ def check_cross_case(indicator):
     return result
 
 def save_full_case(case_num, officer, suspect, app_src, dev_role, f_hash, content):
-    conn = sqlite3.connect('cfis_local_vault.db')
+    conn = sqlite3.connect("cfis_local_vault.db")
     cursor = conn.cursor()
+
     try:
-        cursor.execute('''
-            INSERT OR REPLACE INTO cases_archive (case_number, officer_assigned, suspect_name, app_source, device_role, file_hash, chat_content, date_saved)
+        cursor.execute("""
+            INSERT OR REPLACE INTO cases_archive
+            (case_number, officer_assigned, suspect_name,
+             app_source, device_role, file_hash,
+             chat_content, date_saved)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (case_num, officer, suspect, app_src, dev_role, f_hash, content, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        """, (
+            case_num,
+            officer,
+            suspect,
+            app_src,
+            dev_role,
+            f_hash,
+            content,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
+
         conn.commit()
+
+        print("Rows inserted:", cursor.rowcount)
+
         return True
-    except sqlite3.Error:
+
+    except Exception as e:
+        st.error(e)
         return False
+
     finally:
         conn.close()
 
@@ -201,10 +221,16 @@ def load_full_case(case_num):
     conn.close()
     return result
 
-def get_all_indicators():
-    conn = sqlite3.connect('cfis_local_vault.db')
-    df = pd.read_sql_query("SELECT * FROM historical_markers ORDER BY id DESC", conn)
+def get_saved_cases():
+    conn = sqlite3.connect("cfis_local_vault.db")
+
+    df = pd.read_sql_query(
+        "SELECT * FROM cases_archive",
+        conn
+    )
+
     conn.close()
+
     return df
 
 # ==============================================================================
@@ -1408,5 +1434,6 @@ with main_tabs[1]:
             st.error("Case ID not found in the central vault archive.")
 
     st.markdown(f"#### {tx['stored_records_lbl']}")
-    indicators_df = get_all_indicators()
+    saved_cases = get_saved_cases()
+    st.dataframe(saved_cases, use_container_width=True)
     st.dataframe(indicators_df, use_container_width=True)
