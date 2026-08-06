@@ -168,6 +168,7 @@ def init_db():
     finally:
         conn.close()
 
+
 init_db()
 
 def check_cross_case(indicator):
@@ -184,13 +185,19 @@ def save_full_case(case_num, officer, suspect, app_src, dev_role, f_hash, conten
 
     try:
         cursor.execute("""
-            INSERT OR REPLACE INTO cases_archive
-            (case_number, officer_assigned, suspect_name,
-             app_source, device_role, file_hash,
-             chat_content, date_saved)
+            INSERT INTO cases_archive(
+                case_number,
+                officer_assigned,
+                suspect_name,
+                app_source,
+                device_role,
+                file_hash,
+                chat_content,
+                date_saved
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            case_num,
+            case_num.strip(),
             officer,
             suspect,
             app_src,
@@ -202,8 +209,6 @@ def save_full_case(case_num, officer, suspect, app_src, dev_role, f_hash, conten
 
         conn.commit()
 
-        print("Rows inserted:", cursor.rowcount)
-
         return True
 
     except Exception as e:
@@ -214,11 +219,25 @@ def save_full_case(case_num, officer, suspect, app_src, dev_role, f_hash, conten
         conn.close()
 
 def load_full_case(case_num):
-    conn = sqlite3.connect('cfis_local_vault.db')
+    conn = sqlite3.connect("cfis_local_vault.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT chat_content, officer_assigned, suspect_name, file_hash, app_source, device_role FROM cases_archive WHERE case_number = ?", (case_num,))
+
+    cursor.execute("""
+        SELECT
+            chat_content,
+            officer_assigned,
+            suspect_name,
+            file_hash,
+            app_source,
+            device_role
+        FROM cases_archive
+        WHERE case_number=?
+    """, (case_num.strip(),))
+
     result = cursor.fetchone()
+
     conn.close()
+
     return result
 
 def get_saved_cases():
@@ -1083,9 +1102,20 @@ with main_tabs[0]:
                 st.rerun()
         with col_ctl2:
             if st.button(tx["save_vault_btn"]):
-                save_full_case(case_id, investigator, suspect_name, app_source, device_role, st.session_state['active_file_hash'], chat_data)
-                add_audit_entry("4. Archival", "Case saved to SQLite Local Vault", investigator, st.session_state['active_file_hash'])
-                st.success("Saved to Vault!")
+                saved = save_full_case(
+                    case_id,
+                    investigator,
+                    suspect_name,
+                    app_source,
+                    device_role,
+                    st.session_state["active_file_hash"],
+                    chat_data
+                )
+                
+                if saved:
+                    st.success("✅ Case saved successfully.")
+                else:
+                    st.error("❌ Failed to save case.")
 
         # Visual Analytics
         st.markdown(f"## {tx['intel_header']}")
@@ -1421,6 +1451,7 @@ with main_tabs[1]:
     search_case_id = st.text_input(tx["archive_search_lbl"], value="")
     
     if st.button(tx["load_archive_btn"]):
+        st.write("Searching for:", repr(search_case_id))
         archived_case = load_full_case(search_case_id)
         if archived_case:
             st.session_state['active_chat_content'] = archived_case[0]
@@ -1436,4 +1467,4 @@ with main_tabs[1]:
     st.markdown(f"#### {tx['stored_records_lbl']}")
     saved_cases = get_saved_cases()
     st.dataframe(saved_cases, use_container_width=True)
-    st.dataframe(indicators_df, use_container_width=True)
+   
