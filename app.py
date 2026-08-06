@@ -168,13 +168,13 @@ def init_db():
     finally:
         conn.close()
 
+
+init_db()
 conn = sqlite3.connect("cfis_local_vault.db")
 df = pd.read_sql_query("SELECT * FROM cases_archive", conn)
 st.write("Cases Archive:")
 st.dataframe(df)
 conn.close()
-init_db()
-
 def check_cross_case(indicator):
     conn = sqlite3.connect('cfis_local_vault.db')
     cursor = conn.cursor()
